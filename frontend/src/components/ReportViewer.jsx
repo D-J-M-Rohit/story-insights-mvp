@@ -31,6 +31,11 @@ export default function ReportViewer() {
     score: p.score,
   }));
   const interpretation = report.interpretation || {};
+  const coverage = (report.choices || []).reduce((acc, choice) => {
+    const target = choice?.scene_metadata?.target_construct;
+    if (target) acc[target] = (acc[target] || 0) + 1;
+    return acc;
+  }, {});
 
   async function onDownloadPdf() {
     setDownloading(true);
@@ -87,6 +92,16 @@ export default function ReportViewer() {
           </div>
         ))}
       </div>
+      {Object.keys(coverage).length > 0 && (
+        <div className="card">
+          <h3>Construct Coverage</h3>
+          <p className="muted small">
+            {["risk", "social", "empathy", "decisiveness", "emotional_regulation"]
+              .map((k) => `${k}: ${coverage[k] || 0}`)
+              .join(" · ")}
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <h3>Technical Feature Scores</h3>

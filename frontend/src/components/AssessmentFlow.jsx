@@ -108,6 +108,11 @@ export default function AssessmentFlow() {
         <SceneLoading selectedChoiceText={lastChoiceText} />
       ) : (
         <>
+          {import.meta.env.DEV && scene?.scene_metadata?.target_construct && (
+            <p className="muted small">
+              Target: {scene.scene_metadata.target_construct} · Difficulty: {scene.scene_metadata.difficulty}
+            </p>
+          )}
           <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
           <SceneRenderer
             scene={scene}

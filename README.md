@@ -103,3 +103,21 @@ REPORT_LLM_SUMMARY_ENABLED=true
 - `GET /api/v1/reports/{session_id}`
 - `GET /api/v1/reports/{session_id}/pdf`
 - `GET /health`
+
+## Prompt Policy Engine and Scenario Packs
+
+- Scenario Packs define per-scenario assessment blueprints (construct minimums, difficulty curve, safety bounds, and reusable fragments).
+- Prompt Policy picks target construct and scene knobs before every generation call.
+- LLM generates only within policy constraints; scoring remains deterministic and backend-owned.
+- Policy traces are stored for auditability (policy input/output, prompt hash, validation, fallback reason, latency).
+- Built-in packs:
+  - `workplace_core_v1`
+  - `school_core_v1`
+  - `emergency_core_v1`
+
+Debugging endpoints:
+- `GET /api/v1/scenario-packs`
+- `POST /api/v1/policy/preview`
+- `GET /api/v1/policy-traces/{session_id}`
+
+Mock mode still works without API keys.

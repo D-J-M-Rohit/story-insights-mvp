@@ -56,6 +56,10 @@ export function getMySessions() {
   return request("/api/v1/my-sessions", {}, true);
 }
 
+export function getScenarioPacks() {
+  return request("/api/v1/scenario-packs", {}, true);
+}
+
 export async function downloadReportPdf(sessionId) {
   const headers = {};
   if (getToken()) headers.Authorization = `Bearer ${getToken()}`;

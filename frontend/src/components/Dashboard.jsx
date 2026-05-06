@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createSession, getMySessions } from "../api";
+import { createSession, getMySessions, getScenarioPacks } from "../api";
 import { SessionContext } from "../App";
 
 export default function Dashboard() {
@@ -9,6 +9,8 @@ export default function Dashboard() {
   const [scenario, setScenario] = useState("workplace");
   const [maxTurns, setMaxTurns] = useState(20);
   const [sessions, setSessions] = useState([]);
+  const [packs, setPacks] = useState([]);
+  const [scenarioPackId, setScenarioPackId] = useState("workplace_core_v1");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -16,6 +18,8 @@ export default function Dashboard() {
     async function loadSessions() {
       try {
         setSessions(await getMySessions());
+        const packRows = await getScenarioPacks();
+        setPacks(packRows);
       } catch (e) {
         setError(e.message);
       }
@@ -27,7 +31,7 @@ export default function Dashboard() {
     setLoading(true);
     setError("");
     try {
-      const session = await createSession({ scenario, max_turns: Number(maxTurns) });
+      const session = await createSession({ scenario, scenario_pack_id: scenarioPackId, max_turns: Number(maxTurns) });
       setSession(session);
       navigate("/assessment");
     } catch (e) {
@@ -51,6 +55,26 @@ export default function Dashboard() {
 
       <div className="card">
         <h3>Start New Session</h3>
+        <label>
+          Scenario Pack
+          <select
+            value={scenarioPackId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setScenarioPackId(id);
+              const selectedPack = packs.find((p) => p.id === id);
+              if (selectedPack?.scenario) setScenario(selectedPack.scenario);
+            }}
+          >
+            {(packs.length ? packs : [
+              { id: "workplace_core_v1", title: "Workplace Core", scenario: "workplace" },
+              { id: "school_core_v1", title: "School Core", scenario: "school" },
+              { id: "emergency_core_v1", title: "Emergency Core", scenario: "emergency" },
+            ]).map((p) => (
+              <option key={p.id} value={p.id}>{p.title || p.id}</option>
+            ))}
+          </select>
+        </label>
         <label>
           Scenario
           <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
