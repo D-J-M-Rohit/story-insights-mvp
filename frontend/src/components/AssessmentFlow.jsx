@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionContext } from "../App";
 import { getNextScene } from "../api";
+import SceneLoading from "./SceneLoading";
 import SceneRenderer from "./SceneRenderer";
 import TimerBar from "./TimerBar";
 
@@ -10,8 +11,11 @@ export default function AssessmentFlow() {
   const [scene, setScene] = useState(null);
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingNext, setLoadingNext] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [lastPayload, setLastPayload] = useState(null);
+  const [lastChoiceText, setLastChoiceText] = useState("");
   const navigate = useNavigate();
 
   const startRef = useRef(performance.now());
@@ -58,6 +62,7 @@ export default function AssessmentFlow() {
   async function submitCurrent(forceTimeout = false) {
     if (!scene || submitting) return;
     setSubmitting(true);
+    setLoadingNext(true);
     setError("");
     const latency = Math.round(performance.now() - startRef.current);
     const telemetry = {
@@ -67,15 +72,20 @@ export default function AssessmentFlow() {
       changed_intent: Boolean(selected && firstHoverRef.current && selected !== firstHoverRef.current),
       timed_out: forceTimeout,
     };
+    const chosen = scene.options.find((o) => o.id === selected);
+    setLastChoiceText(forceTimeout ? "No selection (timed out)" : chosen?.text || "No selection");
+    const payload = {
+      session_id: session.id,
+      scene_id: scene.id,
+      choice_id: forceTimeout ? null : selected || null,
+      telemetry,
+    };
+    setLastPayload(payload);
     try {
-      const next = await getNextScene({
-        session_id: session.id,
-        scene_id: scene.id,
-        choice_id: forceTimeout ? null : selected || null,
-        telemetry,
-      });
+      const next = await getNextScene(payload);
       setScene(next);
       resetTelemetry();
+      setLastPayload(null);
     } catch (e) {
       if (e.status === 410 || e.message === "assessment_complete") {
         navigate(`/report/${session.id}`);
@@ -84,6 +94,7 @@ export default function AssessmentFlow() {
       }
     } finally {
       setSubmitting(false);
+      setLoadingNext(false);
     }
   }
 
@@ -93,16 +104,40 @@ export default function AssessmentFlow() {
 
   return (
     <div className="page">
-      <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
-      <SceneRenderer
-        scene={scene}
-        selected={selected}
-        onSelect={setSelected}
-        onHover={onHover}
-        onSubmit={() => submitCurrent(false)}
-        submitting={submitting}
-      />
+      {loadingNext ? (
+        <SceneLoading selectedChoiceText={lastChoiceText} />
+      ) : (
+        <>
+          <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
+          <SceneRenderer
+            scene={scene}
+            selected={selected}
+            onSelect={setSelected}
+            onHover={onHover}
+            onSubmit={() => submitCurrent(false)}
+            submitting={submitting}
+          />
+        </>
+      )}
       {error && <p className="error">{error}</p>}
+      {error && lastPayload && (
+        <button onClick={async () => {
+          setError("");
+          setLoadingNext(true);
+          try {
+            const next = await getNextScene(lastPayload);
+            setScene(next);
+            resetTelemetry();
+            setLastPayload(null);
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setLoadingNext(false);
+          }
+        }}>
+          Retry
+        </button>
+      )}
     </div>
   );
 }

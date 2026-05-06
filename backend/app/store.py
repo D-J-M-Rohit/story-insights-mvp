@@ -1,192 +1,156 @@
-import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-from .config import settings
+from sqlalchemy import select
+
+from .database import SessionLocal, init_db as _init_db
+from .models import Choice, Report, Scene, Session, User
 
 
 def _now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc)
 
 
-def _conn():
-    conn = sqlite3.connect(settings.DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _ensure_columns(conn, table, columns):
-    cur = conn.execute(f"PRAGMA table_info({table})")
-    existing = {row[1] for row in cur.fetchall()}
-    for col, col_type in columns:
-        if col not in existing:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
-
-
-def init_db():
-    conn = _conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sessions (
-          id TEXT PRIMARY KEY,
-          scenario TEXT,
-          max_turns INTEGER,
-          current_turn INTEGER,
-          status TEXT,
-          created_at TEXT
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS scenes (
-          id TEXT PRIMARY KEY,
-          session_id TEXT,
-          turn INTEGER,
-          title TEXT,
-          scene TEXT,
-          options_json TEXT,
-          time_limit_sec INTEGER,
-          scene_metadata_json TEXT,
-          created_at TEXT
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS choices (
-          id TEXT PRIMARY KEY,
-          session_id TEXT,
-          scene_id TEXT,
-          turn INTEGER,
-          option_id TEXT,
-          option_text TEXT,
-          traits_json TEXT,
-          telemetry_json TEXT,
-          options_json TEXT,
-          scene_metadata_json TEXT,
-          time_limit_sec INTEGER,
-          created_at TEXT
-        )
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS reports (
-          session_id TEXT PRIMARY KEY,
-          report_json TEXT,
-          created_at TEXT
-        )
-        """
-    )
-    _ensure_columns(conn, "scenes", [("scene_metadata_json", "TEXT")])
-    _ensure_columns(
-        conn,
-        "choices",
-        [
-            ("options_json", "TEXT"),
-            ("scene_metadata_json", "TEXT"),
-            ("time_limit_sec", "INTEGER"),
-        ],
-    )
-    conn.commit()
-    conn.close()
-
-
-def create_session(scenario, max_turns):
-    session_id = str(uuid.uuid4())
-    data = {
-        "id": session_id,
-        "scenario": scenario,
-        "max_turns": max_turns,
-        "current_turn": 0,
-        "status": "active",
-        "created_at": _now(),
-    }
-    conn = _conn()
-    conn.execute(
-        """
-        INSERT INTO sessions (id, scenario, max_turns, current_turn, status, created_at)
-        VALUES (:id, :scenario, :max_turns, :current_turn, :status, :created_at)
-        """,
-        data,
-    )
-    conn.commit()
-    conn.close()
-    return data
-
-
-def get_session(session_id):
-    conn = _conn()
-    row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def update_session_turn(session_id, turn):
-    conn = _conn()
-    conn.execute("UPDATE sessions SET current_turn = ? WHERE id = ?", (turn, session_id))
-    conn.commit()
-    conn.close()
-
-
-def complete_session(session_id):
-    conn = _conn()
-    conn.execute("UPDATE sessions SET status = 'complete' WHERE id = ?", (session_id,))
-    conn.commit()
-    conn.close()
-
-
-def save_scene(scene):
-    conn = _conn()
-    conn.execute(
-        """
-        INSERT INTO scenes (id, session_id, turn, title, scene, options_json, time_limit_sec, scene_metadata_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            scene["id"],
-            scene["session_id"],
-            scene["turn"],
-            scene["title"],
-            scene["scene"],
-            json.dumps(scene["options"]),
-            scene["time_limit_sec"],
-            json.dumps(scene.get("scene_metadata") or {}),
-            _now(),
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_scene(scene_id):
-    conn = _conn()
-    row = conn.execute("SELECT * FROM scenes WHERE id = ?", (scene_id,)).fetchone()
-    conn.close()
-    if not row:
+def _to_dict(model):
+    if model is None:
         return None
-    out = dict(row)
-    out["options"] = json.loads(out["options_json"])
-    meta = out.get("scene_metadata_json")
-    out["scene_metadata"] = json.loads(meta) if meta else {}
+    out = {}
+    for key, value in model.__dict__.items():
+        if key.startswith("_"):
+            continue
+        if isinstance(value, datetime):
+            out[key] = value.isoformat()
+            continue
+        out[key] = value
     return out
 
 
+def init_db():
+    _init_db()
+
+
+def create_user(email, password_hash, role="participant"):
+    with SessionLocal() as db:
+        user = User(email=email, password_hash=password_hash, role=role)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return _to_dict(user)
+
+
+def get_user_by_email(email):
+    with SessionLocal() as db:
+        user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        return _to_dict(user)
+
+
+def get_user_by_id(user_id):
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        return _to_dict(user)
+
+
+def create_session(user_id, scenario, max_turns):
+    with SessionLocal() as db:
+        session = Session(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            scenario=scenario,
+            max_turns=max_turns,
+            current_turn=0,
+            status="active",
+            created_at=_now(),
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return _to_dict(session)
+
+
+def get_session(session_id):
+    with SessionLocal() as db:
+        session = db.get(Session, session_id)
+        return _to_dict(session)
+
+
+def list_sessions_for_user(user_id):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(Session).where(Session.user_id == user_id).order_by(Session.created_at.desc())
+        ).scalars()
+        return [_to_dict(row) for row in rows]
+
+
+def assert_session_owner(session_id, user_id):
+    session = get_session(session_id)
+    if not session:
+        return None
+    return session if session["user_id"] == user_id else None
+
+
+def update_session_turn(session_id, turn):
+    with SessionLocal() as db:
+        session = db.get(Session, session_id)
+        if not session:
+            return None
+        session.current_turn = turn
+        db.commit()
+        db.refresh(session)
+        return _to_dict(session)
+
+
+def complete_session(session_id):
+    with SessionLocal() as db:
+        session = db.get(Session, session_id)
+        if not session:
+            return None
+        session.status = "complete"
+        session.completed_at = _now()
+        db.commit()
+        db.refresh(session)
+        return _to_dict(session)
+
+
+def save_scene(scene):
+    with SessionLocal() as db:
+        row = Scene(
+            id=scene["id"],
+            session_id=scene["session_id"],
+            turn=scene["turn"],
+            title=scene["title"],
+            scene=scene["scene"],
+            options_json=scene["options"],
+            scene_metadata=scene.get("scene_metadata") or {},
+            time_limit_sec=scene.get("time_limit_sec", 45),
+            created_at=_now(),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        out = _to_dict(row)
+        out["options"] = out.pop("options_json", [])
+        return out
+
+
+def get_scene(scene_id):
+    with SessionLocal() as db:
+        row = db.get(Scene, scene_id)
+        if not row:
+            return None
+        out = _to_dict(row)
+        out["options"] = out.pop("options_json", [])
+        return out
+
+
 def list_scenes(session_id):
-    conn = _conn()
-    rows = conn.execute("SELECT * FROM scenes WHERE session_id = ? ORDER BY turn ASC", (session_id,)).fetchall()
-    conn.close()
-    result = []
-    for row in rows:
-        item = dict(row)
-        item["options"] = json.loads(item["options_json"])
-        meta = item.get("scene_metadata_json")
-        item["scene_metadata"] = json.loads(meta) if meta else {}
-        result.append(item)
-    return result
+    with SessionLocal() as db:
+        rows = db.execute(select(Scene).where(Scene.session_id == session_id).order_by(Scene.turn.asc())).scalars()
+        result = []
+        for row in rows:
+            out = _to_dict(row)
+            out["options"] = out.pop("options_json", [])
+            result.append(out)
+        return result
 
 
 def save_choice(
@@ -197,73 +161,58 @@ def save_choice(
     option_text,
     traits,
     telemetry,
-    options=None,
-    scene_metadata=None,
-    time_limit_sec=45,
+    time_limit_sec,
+    options,
+    scene_metadata,
 ):
-    conn = _conn()
-    conn.execute(
-        """
-        INSERT INTO choices (id, session_id, scene_id, turn, option_id, option_text, traits_json, telemetry_json, options_json, scene_metadata_json, time_limit_sec, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            str(uuid.uuid4()),
-            session_id,
-            scene_id,
-            turn,
-            option_id,
-            option_text,
-            json.dumps(traits or {}),
-            json.dumps(telemetry or {}),
-            json.dumps(options or []),
-            json.dumps(scene_metadata or {}),
-            int(time_limit_sec or 45),
-            _now(),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    with SessionLocal() as db:
+        row = Choice(
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            scene_id=scene_id,
+            turn=turn,
+            option_id=option_id,
+            option_text=option_text,
+            traits_json=traits or {},
+            telemetry_json=telemetry or {},
+            options_json=options or [],
+            scene_metadata=scene_metadata or {},
+            time_limit_sec=int(time_limit_sec or 45),
+            created_at=_now(),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
 
 
 def list_choices(session_id):
-    conn = _conn()
-    rows = conn.execute("SELECT * FROM choices WHERE session_id = ? ORDER BY turn ASC", (session_id,)).fetchall()
-    conn.close()
-    result = []
-    for row in rows:
-        item = dict(row)
-        item["traits"] = json.loads(item["traits_json"] or "{}")
-        item["telemetry"] = json.loads(item["telemetry_json"] or "{}")
-        raw_opts = item.get("options_json")
-        item["options"] = json.loads(raw_opts) if raw_opts else []
-        meta = item.get("scene_metadata_json")
-        item["scene_metadata"] = json.loads(meta) if meta else {}
-        tl = item.get("time_limit_sec")
-        item["time_limit_sec"] = int(tl) if tl is not None else 45
-        for key in ("traits_json", "telemetry_json", "options_json", "scene_metadata_json"):
-            item.pop(key, None)
-        result.append(item)
-    return result
+    with SessionLocal() as db:
+        rows = db.execute(select(Choice).where(Choice.session_id == session_id).order_by(Choice.turn.asc())).scalars()
+        result = []
+        for row in rows:
+            item = _to_dict(row)
+            item["traits"] = item.pop("traits_json", {}) or {}
+            item["telemetry"] = item.pop("telemetry_json", {}) or {}
+            item["options"] = item.pop("options_json", []) or []
+            item["scene_metadata"] = item.get("scene_metadata", {}) or {}
+            item["time_limit_sec"] = int(item.get("time_limit_sec") or 45)
+            result.append(item)
+        return result
 
 
 def save_report(session_id, report):
-    conn = _conn()
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO reports (session_id, report_json, created_at)
-        VALUES (?, ?, ?)
-        """,
-        (session_id, json.dumps(report), _now()),
-    )
-    conn.commit()
-    conn.close()
+    with SessionLocal() as db:
+        existing = db.get(Report, session_id)
+        if existing:
+            existing.report_json = report
+            existing.updated_at = _now()
+        else:
+            db.add(Report(session_id=session_id, report_json=report, created_at=_now(), updated_at=_now()))
+        db.commit()
 
 
 def get_report(session_id):
-    conn = _conn()
-    row = conn.execute("SELECT report_json FROM reports WHERE session_id = ?", (session_id,)).fetchone()
-    conn.close()
-    if not row:
-        return None
-    return json.loads(row["report_json"])
+    with SessionLocal() as db:
+        row = db.get(Report, session_id)
+        return row.report_json if row else None

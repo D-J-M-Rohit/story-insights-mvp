@@ -10,9 +10,11 @@ class SessionCreate(BaseModel):
 
 class SessionOut(BaseModel):
     id: str
+    user_id: str
     scenario: str
     max_turns: int
     status: str
+    created_at: Optional[str] = None
 
 
 class HoverEvent(BaseModel):
@@ -54,6 +56,28 @@ class NextSceneRequest(BaseModel):
     telemetry: Optional[Telemetry] = None
 
 
+class UserRegister(BaseModel):
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    role: str
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
 class FeatureOut(BaseModel):
     name: str
     key: str
@@ -74,7 +98,9 @@ class PenOut(BaseModel):
 
 class ReportOut(BaseModel):
     session_id: str
+    scenario: Optional[str] = None
     summary: str
     features: List[FeatureOut]
     pen: List[PenOut]
     choices: List[dict]
+    interpretation: Optional[dict] = None

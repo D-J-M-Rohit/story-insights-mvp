@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useContext, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { getReport } from "../api";
+import { downloadReportPdf, getReport } from "../api";
+import { SessionContext } from "../App";
 
 export default function ReportViewer() {
   const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const { logout } = useContext(SessionContext);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -26,16 +30,66 @@ export default function ReportViewer() {
     metric: p.key ? p.key.replace(/_proxy$/, "") : p.name.split("/")[0].trim(),
     score: p.score,
   }));
+  const interpretation = report.interpretation || {};
+
+  async function onDownloadPdf() {
+    setDownloading(true);
+    try {
+      const blob = await downloadReportPdf(sessionId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `story-insights-report-${sessionId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="page">
+      <div className="row-between">
+        <h2>Report</h2>
+        <div>
+          <button className="inline-btn" onClick={() => navigate("/dashboard")}>
+            Dashboard
+          </button>
+          <button className="inline-btn" onClick={logout}>
+            Logout
+          </button>
+        </div>
+      </div>
       <div className="card">
         <h2>Behavioral Insight Report</h2>
+        <p className="muted">{report.scenario}</p>
+        <p className="muted">
+          Experimental reflection only. This is not a clinical, diagnostic, or hiring assessment.
+        </p>
         <p>{report.summary}</p>
+      </div>
+      <div className="card">
+        <h3>Friendly Interpretation</h3>
+        <p><strong>Decision Style:</strong> {interpretation.decision_style}</p>
+        <p><strong>Strengths in this setting:</strong> {interpretation.strengths}</p>
+        <p><strong>Possible Growth Area:</strong> {interpretation.growth_areas}</p>
+        <p><strong>Setting-Specific Summary:</strong> {interpretation.setting_specific_summary}</p>
+      </div>
+      <div className="grid">
+        {(interpretation.trait_buckets || []).map((tb) => (
+          <div key={tb.key} className="card">
+            <h4>{tb.key}</h4>
+            <strong>{tb.score}</strong>
+            <p>{tb.label}</p>
+            <p className="muted small">{tb.bucket}</p>
+          </div>
+        ))}
       </div>
 
       <div className="card">
-        <h3>Feature Scores</h3>
+        <h3>Technical Feature Scores</h3>
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={report.features}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -78,9 +132,10 @@ export default function ReportViewer() {
           </div>
         ))}
       </div>
-      <Link className="button-link" to="/">
-        Start another session
-      </Link>
+      <button onClick={onDownloadPdf} disabled={downloading}>
+        {downloading ? "Preparing PDF..." : "Download PDF"}
+      </button>
+      <Link className="button-link" to="/dashboard">Back to dashboard</Link>
     </div>
   );
 }

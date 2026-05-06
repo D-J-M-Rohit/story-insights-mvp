@@ -1,33 +1,15 @@
-# story-insights-mvp
+# Story Insights MVP
 
-A minimalist full-stack MVP for a branching-story behavioral-insight app. Users complete timed scene choices, telemetry is recorded, and a backend scoring engine computes experimental insight features.
+Production-style MVP for branching story insights with:
+- JWT auth + persistent user sessions
+- PostgreSQL-backed storage (local or cloud)
+- Deterministic backend scoring
+- Friendly interpretation buckets + optional LLM summary
+- On-demand PDF report generation (streamed, not stored)
 
-## What This MVP Does
+## Setup
 
-- Starts an assessment session with scenario and max turns.
-- Generates scene-by-scene branching choices (mock/OpenAI/Gemini via backend).
-- Captures telemetry: latency, hover log, hover switch count, changed intent, timeout.
-- Stores sessions/scenes/choices/reports in SQLite.
-- Computes 10 backend-scored features (LLM does not score users).
-- Displays report with Recharts bar + radar visualizations.
-
-## Architecture Summary
-
-- Frontend: React + Vite web app (`frontend/`)
-  - Consent/start screen
-  - Assessment flow
-  - Scene renderer + timer bar
-  - Report viewer with charts
-- Backend: FastAPI service (`backend/`)
-  - Session/scenes/report endpoints
-  - LLM provider abstraction (`mock`, `openai`, `gemini`)
-  - Strict prompt builder
-  - SQLite data store
-  - Explicit scoring engine
-
-## Install
-
-### Backend
+1) Install backend:
 
 ```bash
 cd backend
@@ -35,10 +17,23 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+```
+
+2) Start local Postgres (optional, recommended for local dev):
+
+```bash
+docker compose up -d postgres
+```
+
+3) Run backend:
+
+```bash
+cd backend
+source .venv/bin/activate
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
+4) Install frontend:
 
 ```bash
 cd frontend
@@ -46,56 +41,65 @@ npm install
 npm run dev
 ```
 
-## Run
+5) Open:
+- [http://localhost:5173](http://localhost:5173)
 
-- Open [http://localhost:5173](http://localhost:5173)
-- Backend health: [http://localhost:8000/health](http://localhost:8000/health)
+## Auth Flow
 
-## Environment Setup
+1. Register
+2. Start session
+3. Complete assessment
+4. View report
+5. Download PDF
 
-Configure `backend/.env`.
+## Environment
 
-### Mock mode (no keys required)
+Edit `backend/.env`:
 
 ```env
 LLM_PROVIDER=mock
-```
-
-### OpenAI mode
-
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=your_key
-OPENAI_MODEL=your_model
-```
-
-### Gemini mode
-
-```env
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your_key
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
+
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/story_insights
+
+JWT_SECRET_KEY=change-me-in-production
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=10080
+
+CORS_ORIGINS=http://localhost:5173
+
+REPORT_LLM_SUMMARY_ENABLED=true
 ```
 
-If OpenAI/Gemini fails or returns malformed JSON, backend gracefully falls back to mock scene generation.
+## Cloud Database
 
-## API Endpoints
+- Create PostgreSQL on Neon, Supabase, or Railway.
+- Paste the connection string into `DATABASE_URL`.
+- Restart backend.
 
+## Local Database
+
+- Run local Postgres or use Docker (`docker compose up -d postgres`).
+- Keep `DATABASE_URL` pointed at local DB.
+
+## LLM Behavior
+
+- Scene generation uses `LLM_PROVIDER` (`mock`, `openai`, `gemini`).
+- If OpenAI/Gemini scene generation fails, backend falls back safely to mock scenes.
+- Report summaries use `REPORT_LLM_SUMMARY_ENABLED=true` and same provider env.
+- If report LLM summary fails or returns invalid JSON, backend falls back to deterministic interpretation.
+
+## Key Endpoints
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/me`
+- `GET /api/v1/my-sessions`
 - `POST /api/v1/sessions`
 - `POST /api/v1/scenes/next`
 - `GET /api/v1/reports/{session_id}`
+- `GET /api/v1/reports/{session_id}/pdf`
 - `GET /health`
-
-## Notes
-
-- LLM generates scenes/options only.
-- Scoring is computed exclusively by backend formulas.
-- This MVP report is experimental and should not be treated as a clinical or hiring assessment.
-
-## TODO Next Steps
-
-- TODO: Add authentication and role separation (no JWT yet in MVP).
-- TODO: Add production database migration path (Postgres later, SQLite for MVP).
-- TODO: Add async job queue and caching layers (Redis later).
-- TODO: Add vector retrieval and document ingestion (FAISS/S3/PDF export later).
-- TODO: Add deployment orchestration (Kubernetes later).

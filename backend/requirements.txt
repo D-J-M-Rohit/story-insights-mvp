@@ -5,3 +5,8 @@ pydantic-settings
 python-dotenv
 openai
 google-genai
+sqlalchemy
+psycopg[binary]
+python-jose[cryptography]
+passlib[bcrypt]
+reportlab
