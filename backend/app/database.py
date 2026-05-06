@@ -20,6 +20,7 @@ def init_db():
             raise
         _create_missing_postgres_database(settings.DATABASE_URL)
         Base.metadata.create_all(bind=engine)
+    _ensure_columns()
 
 
 def get_db():
@@ -43,3 +44,11 @@ def _create_missing_postgres_database(database_url: str):
             cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (target_db,))
             if cur.fetchone() is None:
                 cur.execute(f'CREATE DATABASE "{target_db}"')
+
+
+def _ensure_columns():
+    if "postgresql" not in settings.DATABASE_URL:
+        return
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scenario_pack_id VARCHAR")
+        conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS policy_version VARCHAR")

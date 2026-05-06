@@ -1,0 +1,59 @@
+{
+  "id": "emergency_core_v1",
+  "slug": "emergency-core",
+  "version": "2026-05-01",
+  "scenario": "emergency",
+  "title": "Emergency Core",
+  "description": "Emergency scenarios focused on triage, urgent communication, limited resources, and uncertainty.",
+  "max_turns_default": 5,
+  "prompt_version": "scene_schema_v3",
+  "blueprint": {
+    "target_min": {
+      "risk": 1,
+      "social": 1,
+      "empathy": 1,
+      "decisiveness": 1,
+      "emotional_regulation": 1
+    },
+    "scenario_priority": ["decisiveness", "risk"],
+    "cooldown_turns": 2
+  },
+  "difficulty_curve": [0.45, 0.54, 0.62, 0.70, 0.78],
+  "characteristic_features": {
+    "setting": "urgent public safety context",
+    "stakes_domain": "safety and response coordination",
+    "tone_bounds": ["focused", "grounded", "non-clinical"]
+  },
+  "variable_features": {
+    "ambiguity": { "min": 0.20, "max": 0.80 },
+    "time_pressure": { "min": 0.35, "max": 0.98 },
+    "conflict_affordance": { "min": 0.30, "max": 0.78 },
+    "social_pressure": { "min": 0.20, "max": 0.80 },
+    "stake_clarity": { "min": 0.15, "max": 0.85 }
+  },
+  "safety_profile": {
+    "allow_minor_conflict": true,
+    "allow_urgency": true,
+    "forbid": [
+      "clinical_advice",
+      "mental_health_diagnosis",
+      "hiring_fitness_claims",
+      "sexual_content",
+      "self_harm_guidance",
+      "hate_or_harassment",
+      "illegal_instructions"
+    ]
+  },
+  "fragments": [
+    {
+      "id": "frag_triage_overload",
+      "tags": ["decisiveness", "risk", "triage"],
+      "text": "Two urgent requests arrive while response resources are constrained."
+    },
+    {
+      "id": "frag_comms_failure",
+      "tags": ["social", "emotional_regulation", "coordination"],
+      "text": "A communication channel fails during a fast-moving response update."
+    }
+  ]
+}

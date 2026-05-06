@@ -1,0 +1,59 @@
+{
+  "id": "school_core_v1",
+  "slug": "school-core",
+  "version": "2026-05-01",
+  "scenario": "school",
+  "title": "School Core",
+  "description": "School scenarios focused on integrity, teamwork, deadlines, and instructor feedback.",
+  "max_turns_default": 5,
+  "prompt_version": "scene_schema_v3",
+  "blueprint": {
+    "target_min": {
+      "risk": 1,
+      "social": 1,
+      "empathy": 1,
+      "decisiveness": 1,
+      "emotional_regulation": 1
+    },
+    "scenario_priority": ["empathy", "emotional_regulation"],
+    "cooldown_turns": 2
+  },
+  "difficulty_curve": [0.40, 0.48, 0.56, 0.64, 0.70],
+  "characteristic_features": {
+    "setting": "academic environment",
+    "stakes_domain": "learning and teamwork",
+    "tone_bounds": ["supportive", "grounded", "non-clinical"]
+  },
+  "variable_features": {
+    "ambiguity": { "min": 0.25, "max": 0.85 },
+    "time_pressure": { "min": 0.20, "max": 0.90 },
+    "conflict_affordance": { "min": 0.30, "max": 0.75 },
+    "social_pressure": { "min": 0.25, "max": 0.90 },
+    "stake_clarity": { "min": 0.20, "max": 0.90 }
+  },
+  "safety_profile": {
+    "allow_minor_conflict": true,
+    "allow_urgency": true,
+    "forbid": [
+      "clinical_advice",
+      "mental_health_diagnosis",
+      "hiring_fitness_claims",
+      "sexual_content",
+      "self_harm_guidance",
+      "hate_or_harassment",
+      "illegal_instructions"
+    ]
+  },
+  "fragments": [
+    {
+      "id": "frag_integrity_check",
+      "tags": ["empathy", "risk", "integrity"],
+      "text": "A classmate shares unauthorized exam hints and asks for your help."
+    },
+    {
+      "id": "frag_team_deadline",
+      "tags": ["emotional_regulation", "social", "deadline"],
+      "text": "Your group misses an internal milestone before final submission."
+    }
+  ]
+}

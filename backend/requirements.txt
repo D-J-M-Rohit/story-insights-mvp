@@ -10,3 +10,4 @@ psycopg[binary]
 python-jose[cryptography]
 passlib[bcrypt]
 reportlab
+pytest

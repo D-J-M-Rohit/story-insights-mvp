@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class SessionCreate(BaseModel):
     scenario: str = "workplace"
     max_turns: int = 20
+    scenario_pack_id: Optional[str] = None
 
 
 class SessionOut(BaseModel):
@@ -14,6 +15,8 @@ class SessionOut(BaseModel):
     scenario: str
     max_turns: int
     status: str
+    scenario_pack_id: Optional[str] = None
+    policy_version: Optional[str] = None
     created_at: Optional[str] = None
 
 
@@ -47,6 +50,9 @@ class SceneOut(BaseModel):
     time_limit_sec: int = 45
     options: List[SceneOption]
     scene_metadata: Optional[dict] = None
+    scenario_pack_id: Optional[str] = None
+    prompt_version: Optional[str] = None
+    policy_version: Optional[str] = None
 
 
 class NextSceneRequest(BaseModel):
@@ -104,3 +110,34 @@ class ReportOut(BaseModel):
     pen: List[PenOut]
     choices: List[dict]
     interpretation: Optional[dict] = None
+
+
+class PolicyDecisionOut(BaseModel):
+    target_construct: str
+    difficulty: float
+    ambiguity: float
+    time_pressure: float
+    conflict_affordance: float
+    prompt_template: str
+    prompt_version: str
+    scenario_pack_id: str
+    policy_version: str
+    time_limit_sec: int
+    rationale: Optional[dict] = None
+
+
+class ScenarioPackOut(BaseModel):
+    id: str
+    slug: str
+    version: str
+    scenario: str
+    title: str
+    description: str
+    max_turns_default: int
+
+
+class PolicyPreviewRequest(BaseModel):
+    scenario: Optional[str] = None
+    session_id: Optional[str] = None
+    turn: int
+    choices: Optional[List[dict]] = None

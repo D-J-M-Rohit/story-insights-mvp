@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from .database import SessionLocal, init_db as _init_db
-from .models import Choice, Report, Scene, Session, User
+from .models import Choice, PolicyTrace, PromptTemplate, Report, ScenarioPack, Scene, Session, User
 
 
 def _now():
@@ -50,7 +50,7 @@ def get_user_by_id(user_id):
         return _to_dict(user)
 
 
-def create_session(user_id, scenario, max_turns):
+def create_session(user_id, scenario, max_turns, scenario_pack_id=None, policy_version=None):
     with SessionLocal() as db:
         session = Session(
             id=str(uuid.uuid4()),
@@ -59,6 +59,8 @@ def create_session(user_id, scenario, max_turns):
             max_turns=max_turns,
             current_turn=0,
             status="active",
+            scenario_pack_id=scenario_pack_id,
+            policy_version=policy_version,
             created_at=_now(),
         )
         db.add(session)
@@ -216,3 +218,100 @@ def get_report(session_id):
     with SessionLocal() as db:
         row = db.get(Report, session_id)
         return row.report_json if row else None
+
+
+def upsert_scenario_pack(pack: dict) -> dict:
+    with SessionLocal() as db:
+        existing = db.get(ScenarioPack, pack["id"])
+        if existing:
+            existing.slug = pack["slug"]
+            existing.version = pack["version"]
+            existing.scenario = pack["scenario"]
+            existing.status = pack.get("status", "active")
+            existing.pack_json = pack
+            existing.updated_at = _now()
+            row = existing
+        else:
+            row = ScenarioPack(
+                id=pack["id"],
+                slug=pack["slug"],
+                version=pack["version"],
+                scenario=pack["scenario"],
+                status=pack.get("status", "active"),
+                pack_json=pack,
+                created_at=_now(),
+                updated_at=_now(),
+            )
+            db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def get_scenario_pack(pack_id: str):
+    with SessionLocal() as db:
+        row = db.get(ScenarioPack, pack_id)
+        return _to_dict(row)
+
+
+def get_active_scenario_pack_for_scenario(scenario: str):
+    with SessionLocal() as db:
+        row = db.execute(
+            select(ScenarioPack)
+            .where(ScenarioPack.scenario == scenario, ScenarioPack.status == "active")
+            .order_by(ScenarioPack.updated_at.desc())
+        ).scalar_one_or_none()
+        return _to_dict(row)
+
+
+def list_scenario_packs():
+    with SessionLocal() as db:
+        rows = db.execute(select(ScenarioPack).order_by(ScenarioPack.scenario.asc(), ScenarioPack.slug.asc())).scalars()
+        return [_to_dict(row) for row in rows]
+
+
+def save_policy_trace(trace: dict):
+    with SessionLocal() as db:
+        row = PolicyTrace(**trace)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def update_policy_trace_scene(
+    trace_id: str,
+    scene_id: str,
+    output_hash: str | None,
+    validation: dict,
+    latency_ms: int | None,
+    fallback_reason: str | None,
+):
+    with SessionLocal() as db:
+        row = db.get(PolicyTrace, trace_id)
+        if not row:
+            return None
+        row.scene_id = scene_id
+        row.output_hash = output_hash
+        row.validation_json = validation or {}
+        row.latency_ms = latency_ms
+        row.fallback_reason = fallback_reason
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def list_policy_traces(session_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(PolicyTrace).where(PolicyTrace.session_id == session_id).order_by(PolicyTrace.turn.asc())
+        ).scalars()
+        return [_to_dict(row) for row in rows]
+
+
+def get_policy_trace(session_id: str, turn: int):
+    with SessionLocal() as db:
+        row = db.execute(
+            select(PolicyTrace).where(PolicyTrace.session_id == session_id, PolicyTrace.turn == turn)
+        ).scalar_one_or_none()
+        return _to_dict(row)

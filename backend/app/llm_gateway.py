@@ -1,8 +1,10 @@
 import json
 import uuid
+from time import perf_counter
 
 from .config import settings
 from .prompts import build_scene_prompt
+from .scene_validation import validate_scene_against_policy
 
 TRAIT_KEYS = ["risk", "social", "empathy", "decisiveness", "emotional_regulation"]
 
@@ -60,87 +62,115 @@ def _infer_scene_metadata(options, time_limit_sec, turn):
 
 
 class LLMGateway:
-    def generate_scene(self, session, history, turn):
+    def generate_scene(self, session, history, turn, policy=None, pack=None):
+        policy = policy or self.fallback_policy(session, turn, pack)
+        pack = pack or {}
         provider = (settings.LLM_PROVIDER or "mock").lower()
+        fallback_reason = None
+        started = perf_counter()
         if provider == "openai":
-            scene = self.generate_openai_scene(session, history, turn)
-            return self.normalize_scene(scene, session["id"], turn)
+            scene = self.generate_openai_scene(session, history, turn, policy, pack)
+        elif provider == "gemini":
+            scene = self.generate_gemini_scene(session, history, turn, policy, pack)
+        else:
+            scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
+        normalized = self.normalize_scene(scene, session["id"], turn, policy)
+        validation = validate_scene_against_policy(normalized, policy, pack)
+        if not validation["valid"] and provider in {"openai", "gemini"}:
+            retry_scene = self.generate_provider_scene(provider, session, history, turn, policy, pack, strict_retry=True)
+            normalized = self.normalize_scene(retry_scene, session["id"], turn, policy)
+            validation = validate_scene_against_policy(normalized, policy, pack)
+        if not validation["valid"]:
+            fallback_reason = "scene_validation_failed"
+            fallback_scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
+            normalized = self.normalize_scene(fallback_scene, session["id"], turn, policy)
+            validation = validate_scene_against_policy(normalized, policy, pack)
+        normalized["_meta"] = {
+            "validation": validation,
+            "fallback_reason": fallback_reason,
+            "latency_ms": int((perf_counter() - started) * 1000),
+            "provider": provider,
+            "model_snapshot": self.model_snapshot(provider),
+        }
+        return normalized
+
+    def model_snapshot(self, provider: str) -> str:
+        if provider == "openai":
+            return settings.OPENAI_MODEL or "gpt-4.1-mini"
         if provider == "gemini":
-            scene = self.generate_gemini_scene(session, history, turn)
-            return self.normalize_scene(scene, session["id"], turn)
-        scene = self.generate_mock_scene(session, history, turn)
-        return self.normalize_scene(scene, session["id"], turn)
+            return settings.GEMINI_MODEL or "gemini-2.5-flash"
+        return "mock"
 
-    def generate_mock_scene(self, session, history, turn):
-        scenario = session.get("scenario", "workplace")
-        templates = {
-            "workplace": [
-                ("The Late Alert", "A critical bug alert arrives 20 minutes before a stakeholder demo."),
-                ("Credit and Conflict", "A teammate takes public credit for your core work in a meeting."),
-                ("Deadline Drift", "A deliverable slips and leadership asks for immediate recovery options."),
-            ],
-            "school": [
-                ("Group Project Pivot", "Your team realizes the project plan no longer matches rubric expectations."),
-                ("Exam Rumor", "Classmates share leaked exam topics and ask if you want in."),
-                ("Mentor Feedback", "Your advisor gives harsh feedback one day before submission."),
-            ],
-            "emergency": [
-                ("Crowded Exit", "An alarm triggers in a crowded venue and people panic near an exit."),
-                ("Resource Triage", "Two urgent requests arrive but only one team is immediately available."),
-                ("Comms Breakdown", "Network failure blocks normal communication during a field response."),
-            ],
-        }
-        picked = templates.get(scenario, templates["workplace"])[(turn - 1) % 3]
-        base = ((turn * 37) % 100) / 100
+    def fallback_policy(self, session, turn, pack=None):
+        pack = pack or {}
         return {
-            "title": picked[0],
-            "scene": picked[1],
+            "target_construct": "decisiveness",
+            "difficulty": 0.5,
+            "ambiguity": 0.5,
+            "time_pressure": 0.5,
+            "conflict_affordance": 0.55,
+            "prompt_template": "fallback::decisiveness::core_scene",
+            "prompt_version": pack.get("prompt_version", "scene_schema_v3"),
+            "scenario_pack_id": pack.get("id", f"{session.get('scenario', 'default')}_fallback_v1"),
+            "policy_version": "policy_v1",
             "time_limit_sec": 45,
-            "options": [
-                {
-                    "id": "A",
-                    "text": "Act immediately with a decisive plan and notify key people.",
-                    "traits": {
-                        "risk": round(min(base + 0.25, 1), 2),
-                        "social": 0.7,
-                        "empathy": 0.55,
-                        "decisiveness": 0.88,
-                        "emotional_regulation": 0.65,
-                    },
-                    "construct_tags": ["decisiveness", "social"],
-                },
-                {
-                    "id": "B",
-                    "text": "Pause to gather input and align group consensus before moving.",
-                    "traits": {
-                        "risk": 0.35,
-                        "social": 0.82,
-                        "empathy": 0.78,
-                        "decisiveness": 0.5,
-                        "emotional_regulation": 0.75,
-                    },
-                    "construct_tags": ["social", "empathy"],
-                },
-                {
-                    "id": "C",
-                    "text": "Contain immediate downside first, then communicate in structured steps.",
-                    "traits": {
-                        "risk": 0.45,
-                        "social": 0.58,
-                        "empathy": 0.62,
-                        "decisiveness": 0.7,
-                        "emotional_regulation": 0.84,
-                    },
-                    "construct_tags": ["emotional_regulation", "risk"],
-                },
-            ],
+            "rationale": {"reason": "fallback"},
         }
 
-    def generate_openai_scene(self, session, history, turn):
+    def generate_provider_scene(self, provider, session, history, turn, policy, pack, strict_retry=False):
+        if provider == "openai":
+            return self.generate_openai_scene(session, history, turn, policy, pack, strict_retry=strict_retry)
+        if provider == "gemini":
+            return self.generate_gemini_scene(session, history, turn, policy, pack, strict_retry=strict_retry)
+        return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
+
+    def generate_mock_scene(self, session, history, turn, policy=None, pack=None):
+        policy = policy or self.fallback_policy(session, turn, pack)
+        scenario = session.get("scenario", "workplace")
+        target = policy.get("target_construct", "social")
+        fragments = (pack or {}).get("fragments") or []
+        frag = fragments[(turn - 1) % len(fragments)]["text"] if fragments else "A time-sensitive issue emerges and stakeholders expect action."
+        title = f"{scenario.title()} Decision Point {turn}"
+        base_traits = {
+            "risk": 0.5,
+            "social": 0.5,
+            "empathy": 0.5,
+            "decisiveness": 0.5,
+            "emotional_regulation": 0.5,
+        }
+        low = 0.2
+        mid = 0.5
+        high = 0.8
+        options = []
+        for oid, level, text in [
+            ("A", high, "Take rapid action with clear ownership and immediate communication."),
+            ("B", low, "Delay action to collect more context and reduce immediate exposure."),
+            ("C", mid, "Take a balanced step now, then reassess with team feedback."),
+        ]:
+            traits = dict(base_traits)
+            traits[target] = level
+            options.append({"id": oid, "text": text, "traits": traits, "construct_tags": [target]})
+        return {
+            "title": title,
+            "scene": frag,
+            "time_limit_sec": int(policy.get("time_limit_sec", 45)),
+            "options": options,
+            "scene_metadata": {
+                "target_construct": target,
+                "difficulty": policy.get("difficulty", 0.5),
+                "ambiguity": policy.get("ambiguity", 0.5),
+                "time_pressure": policy.get("time_pressure", 0.5),
+                "conflict_affordance": policy.get("conflict_affordance", 0.5),
+            },
+        }
+
+    def generate_openai_scene(self, session, history, turn, policy, pack, strict_retry=False):
         try:
             from openai import OpenAI
 
-            prompt = build_scene_prompt(session["scenario"], turn, session["max_turns"], history)
+            prompt = build_scene_prompt(session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack)
+            if strict_retry:
+                prompt += "\nSTRICT RETRY: follow schema exactly, include required metadata and target construct spread."
             model = settings.OPENAI_MODEL or "gpt-4.1-mini"
             client = OpenAI(api_key=settings.OPENAI_API_KEY)
             response = client.responses.create(model=model, input=prompt)
@@ -149,13 +179,15 @@ class LLMGateway:
                 text = str(response)
             return self.parse_scene_json(text)
         except Exception:
-            return self.generate_mock_scene(session, history, turn)
+            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
 
-    def generate_gemini_scene(self, session, history, turn):
+    def generate_gemini_scene(self, session, history, turn, policy, pack, strict_retry=False):
         try:
             from google import genai
 
-            prompt = build_scene_prompt(session["scenario"], turn, session["max_turns"], history)
+            prompt = build_scene_prompt(session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack)
+            if strict_retry:
+                prompt += "\nSTRICT RETRY: follow schema exactly, include required metadata and target construct spread."
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
             response = client.models.generate_content(
                 model=settings.GEMINI_MODEL or "gemini-2.5-flash",
@@ -164,7 +196,7 @@ class LLMGateway:
             )
             return self.parse_scene_json(response.text)
         except Exception:
-            return self.generate_mock_scene(session, history, turn)
+            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
 
     def parse_scene_json(self, text):
         if not text:
@@ -175,7 +207,7 @@ class LLMGateway:
             raise ValueError("Malformed JSON response")
         return json.loads(text[start : end + 1])
 
-    def normalize_scene(self, data, session_id, turn):
+    def normalize_scene(self, data, session_id, turn, policy):
         scene_id = str(uuid.uuid4())
         options_in = data.get("options", []) if isinstance(data, dict) else []
         ids = ["A", "B", "C"]
@@ -209,14 +241,24 @@ class LLMGateway:
                     "quality_dimensions": qdims,
                 }
             )
-        time_limit_sec = int(data.get("time_limit_sec", 45) or 45) if isinstance(data, dict) else 45
+        time_limit_sec = int(policy.get("time_limit_sec", data.get("time_limit_sec", 45) if isinstance(data, dict) else 45) or 45)
         inferred_meta = _infer_scene_metadata(normalized_opts, time_limit_sec, turn)
-        scene_metadata = inferred_meta
+        scene_metadata = {
+            **inferred_meta,
+            "target_construct": policy.get("target_construct"),
+            "difficulty": policy.get("difficulty", inferred_meta.get("difficulty")),
+            "ambiguity": policy.get("ambiguity", inferred_meta.get("ambiguity")),
+            "time_pressure": policy.get("time_pressure", inferred_meta.get("time_pressure")),
+            "conflict_affordance": policy.get("conflict_affordance", inferred_meta.get("conflict_affordance")),
+            "scenario_pack_id": policy.get("scenario_pack_id"),
+            "prompt_version": policy.get("prompt_version"),
+            "policy_version": policy.get("policy_version"),
+        }
         if isinstance(data, dict) and isinstance(data.get("scene_metadata"), dict):
-            merged = dict(inferred_meta)
+            merged = dict(scene_metadata)
             for k, v in data["scene_metadata"].items():
                 if v is not None:
-                    merged[k] = _clamp01(v)
+                    merged[k] = _clamp01(v) if isinstance(v, (int, float)) else v
             scene_metadata = merged
         return {
             "id": scene_id,
