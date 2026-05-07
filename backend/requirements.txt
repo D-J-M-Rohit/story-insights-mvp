@@ -11,3 +11,6 @@ python-jose[cryptography]
 passlib[bcrypt]
 reportlab
 pytest
+pytest-cov
+httpx
+prometheus-client

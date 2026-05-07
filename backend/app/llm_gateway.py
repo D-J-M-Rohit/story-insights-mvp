@@ -3,6 +3,15 @@ import uuid
 from time import perf_counter
 
 from .config import settings
+from .logging_config import log_event
+from .metrics import (
+    record_provider_call,
+    record_provider_fallback,
+    record_provider_tokens,
+    record_scene_generation,
+    record_validation_failure,
+)
+from .provider_health import provider_health_tracker
 from .prompts import build_scene_prompt
 from .scene_validation import validate_scene_against_policy
 
@@ -76,9 +85,17 @@ class LLMGateway:
         fallback_reason = None
         started = perf_counter()
         if provider == "openai":
-            scene = self.generate_openai_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
+            if not settings.OPENAI_API_KEY:
+                fallback_reason = "missing_api_key"
+                scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+            else:
+                scene = self.generate_openai_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
         elif provider == "gemini":
-            scene = self.generate_gemini_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
+            if not settings.GEMINI_API_KEY:
+                fallback_reason = "missing_api_key"
+                scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+            else:
+                scene = self.generate_gemini_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
         else:
             scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
         normalized = self.normalize_scene(scene, session["id"], turn, policy, context_bundle)
@@ -91,15 +108,43 @@ class LLMGateway:
             validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
         if not validation["valid"]:
             fallback_reason = "scene_validation_failed"
+            record_validation_failure("scene_generation", "scene_validation_failed")
             fallback_scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
             normalized = self.normalize_scene(fallback_scene, session["id"], turn, policy, context_bundle)
             validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
+        latency_ms = int((perf_counter() - started) * 1000)
+        status = "ok" if provider == "mock" else ("fallback" if fallback_reason else "ok")
+        model = self.model_snapshot(provider)
+        record_scene_generation(provider, model, status, latency_ms / 1000.0)
+        record_provider_call(provider, model, status)
+        if fallback_reason:
+            record_provider_fallback(provider, model, fallback_reason)
+        provider_health_tracker.record_event(
+            provider=provider,
+            model=model,
+            status=status,
+            latency_ms=latency_ms,
+            fallback_reason=fallback_reason,
+            error_type=None,
+            input_tokens=None,
+            output_tokens=None,
+        )
+        record_provider_tokens(provider, model, input_tokens=None, output_tokens=None)
+        log_event(
+            "scene_generation_completed",
+            provider=provider,
+            model=model,
+            status_code=200,
+            duration_ms=latency_ms,
+            fallback_used=bool(fallback_reason),
+            error_type=None if validation.get("valid") else "validation_failed",
+        )
         normalized["_meta"] = {
             "validation": validation,
             "fallback_reason": fallback_reason,
-            "latency_ms": int((perf_counter() - started) * 1000),
+            "latency_ms": latency_ms,
             "provider": provider,
-            "model_snapshot": self.model_snapshot(provider),
+            "model_snapshot": model,
         }
         return normalized
 

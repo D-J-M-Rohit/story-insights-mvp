@@ -172,3 +172,45 @@ Privacy notes:
 Additional endpoints:
 - `GET /api/v1/reports/{session_id}/derived-features`
 - `GET /api/v1/reports/{session_id}/confidence`
+
+## Testing, Provider Health, Metrics, and Privacy-Preserving Logs
+
+- Backend tests are necessary because this MVP combines auth, scene generation, telemetry, deterministic scoring, and report pipelines; one successful UI run does not validate scoring/report correctness.
+- `pytest` + FastAPI `TestClient` are used for backend tests, and `pytest monkeypatch` is used to force mock provider behavior and test env overrides.
+- Provider health endpoints exist because `mock`, `openai`, and `gemini` are interchangeable behind the gateway; ops needs a quick view of active provider, fallback rate, and latency quality.
+- Metrics exist because averages hide long-tail slowness. The MVP now emits Prometheus-compatible counters/histograms for request/error rates and latency distributions.
+- Structured JSON logs are privacy-preserving operational metadata only: route/method/status/timing/request_id/trace_id/provider/error metadata; no passwords, tokens, API keys, raw emails, prompts, scene bodies, report bodies, or full telemetry payloads.
+- W3C-style `traceparent` is parsed when present. Correlation headers are emitted as `X-Request-ID` and `traceparent`.
+- This MVP does not include a full OpenTelemetry collector, Grafana dashboards, or SIEM plumbing yet; those are future production steps.
+
+Run backend tests:
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install -r requirements.txt
+pytest
+```
+
+Run coverage:
+
+```bash
+cd backend
+pytest --cov=app --cov-report=term-missing
+```
+
+Metrics endpoint:
+
+- `GET http://localhost:8000/metrics`
+
+Provider health endpoint:
+
+- `GET http://localhost:8000/api/v1/provider/status`
+
+Future production direction:
+
+- Scrape `/metrics` with Prometheus.
+- Visualize service health in Grafana.
+- Propagate correlation IDs through API gateway/load balancer.
+- Add full OpenTelemetry collector later.
+- Keep raw prompt/response details only in restricted trace stores when needed, not general logs.

@@ -6,6 +6,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from .auth import decode_access_token
+from .logging_config import log_event
+from .metrics import record_rate_limit_rejection
 
 
 class TokenBucket:
@@ -145,6 +147,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             cost=policy.get("cost", 1),
         )
         if not allowed:
+            record_rate_limit_rejection(policy["name"])
+            log_event("rate_limit_rejected", policy=policy["name"], route=path, method=request.method, status_code=429)
             return JSONResponse(
                 status_code=429,
                 content={

@@ -219,3 +219,26 @@ class ContextPreviewRequest(BaseModel):
     scenario_pack_id: Optional[str] = None
     turn: int = 1
     policy: Optional[dict] = None
+
+
+class ProviderStatusOut(BaseModel):
+    active_provider: str
+    configured_model: str
+    status: str
+    window_size: int
+    events_seen: int
+    last_event: Optional[dict] = None
+    latency_ms: dict
+    counts: dict
+    fallback_rate: float
+    error_rate: float
+    slow_generation_count: int
+    thresholds: dict
+    recent_fallback_reasons: dict
+
+
+class MetricsSummaryOut(BaseModel):
+    provider: dict
+    request_counts: Optional[dict] = None
+    fallback_counts: Optional[dict] = None
+    latency_summary: Optional[dict] = None

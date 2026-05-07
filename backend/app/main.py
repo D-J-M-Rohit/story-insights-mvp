@@ -10,11 +10,14 @@ from .context_builder import build_context_bundle
 from .evidence_mapper import attach_evidence_to_report, build_derived_features
 from .generation_trace import build_generation_trace_start, finalize_generation_trace
 from .llm_gateway import LLMGateway
+from .logging_config import configure_logging, hash_identifier, log_event
+from .metrics import metrics_response, record_auth_failure, record_report_generation, record_request
 from .pdf_report import build_report_pdf
 from .policy_trace import build_output_hash, build_policy_trace
 from .prompt_policy import POLICY_VERSION, build_policy_input, decide_policy
 from .prompts import build_scene_prompt
 from .rate_limit import RateLimitMiddleware
+from .request_context import clear_request_context, get_request_context, set_request_context
 from .report_interpreter import generate_interpretation
 from .scenario_packs import get_default_pack_for_scenario, seed_builtin_packs, validate_pack
 from .scoring import score_session
@@ -26,6 +29,8 @@ from .schemas import (
     DerivedFeatureOut,
     GenerationTraceOut,
     NextSceneRequest,
+    MetricsSummaryOut,
+    ProviderStatusOut,
     PolicyDecisionOut,
     PolicyPreviewRequest,
     ReportOut,
@@ -38,6 +43,7 @@ from .schemas import (
     UserOut,
     UserRegister,
 )
+from .provider_health import provider_health_tracker
 from .store import (
     delete_derived_features,
     get_generation_trace_for_scene,
@@ -76,6 +82,7 @@ from .store import (
 
 app = FastAPI(title="Story Insights MVP")
 gateway = LLMGateway()
+configure_logging()
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +94,33 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 
+@app.middleware("http")
+async def request_observability_middleware(request, call_next):
+    started = perf_counter()
+    ctx = get_request_context(request)
+    set_request_context(request_id=ctx["request_id"], trace_id=ctx["trace_id"])
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration_ms = int((perf_counter() - started) * 1000)
+        status_code = response.status_code if response is not None else 500
+        traceparent = f"00-{ctx['trace_id']}-{'0'*16}-{ctx.get('trace_flags','01')}"
+        if response is not None:
+            response.headers["X-Request-ID"] = ctx["request_id"]
+            response.headers["traceparent"] = traceparent
+        record_request(request.method, request.url.path, status_code, duration_ms / 1000.0)
+        log_event(
+            "request_completed",
+            route=request.url.path,
+            method=request.method,
+            status_code=status_code,
+            duration_ms=duration_ms,
+        )
+        clear_request_context()
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -96,6 +130,33 @@ def startup():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
+
+
+@app.get("/api/v1/provider/status", response_model=ProviderStatusOut)
+def provider_status(current_user=Depends(get_current_user)):
+    set_request_context(user_hash=hash_identifier(current_user.get("id")))
+    return provider_health_tracker.snapshot()
+
+
+@app.get("/api/v1/provider/metrics-summary", response_model=MetricsSummaryOut)
+def provider_metrics_summary(current_user=Depends(get_current_user)):
+    set_request_context(user_hash=hash_identifier(current_user.get("id")))
+    snap = provider_health_tracker.snapshot()
+    return {
+        "provider": snap,
+        "request_counts": {
+            "ok": snap.get("counts", {}).get("ok", 0),
+            "fallback": snap.get("counts", {}).get("fallback", 0),
+            "error": snap.get("counts", {}).get("error", 0),
+        },
+        "fallback_counts": snap.get("recent_fallback_reasons", {}),
+        "latency_summary": snap.get("latency_ms", {}),
+    }
 
 
 @app.post("/api/v1/auth/register", response_model=TokenOut)
@@ -121,18 +182,22 @@ def register(payload: UserRegister):
 def login(payload: UserLogin):
     user = get_user_by_email(payload.email.strip().lower())
     if not user or not verify_password(payload.password, user["password_hash"]):
+        record_auth_failure("invalid_credentials")
         raise HTTPException(status_code=401, detail="invalid_credentials")
+    set_request_context(user_hash=hash_identifier(user["id"]))
     token = create_access_token(user)
     return {"access_token": token, "token_type": "bearer", "user": {"id": user["id"], "email": user["email"], "role": user["role"]}}
 
 
 @app.get("/api/v1/me", response_model=UserOut)
 def me(current_user=Depends(get_current_user)):
+    set_request_context(user_hash=hash_identifier(current_user.get("id")))
     return current_user
 
 
 @app.post("/api/v1/sessions", response_model=SessionOut)
 def create_session_endpoint(payload: SessionCreate, current_user=Depends(get_current_user)):
+    set_request_context(user_hash=hash_identifier(current_user.get("id")))
     pack = get_scenario_pack(payload.scenario_pack_id) if payload.scenario_pack_id else None
     if not pack:
         pack = get_default_pack_for_scenario(payload.scenario)
@@ -477,6 +542,8 @@ def context_preview(payload: ContextPreviewRequest, current_user=Depends(get_cur
 
 @app.get("/api/v1/reports/{session_id}", response_model=ReportOut)
 def report(session_id: str, current_user=Depends(get_current_user)):
+    started = perf_counter()
+    set_request_context(user_hash=hash_identifier(current_user.get("id")), session_id=session_id)
     session = assert_session_owner(session_id, current_user["id"])
     if not session:
         raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
@@ -496,11 +563,14 @@ def report(session_id: str, current_user=Depends(get_current_user)):
         report_data, report_data.get("scenario", "general")
     )
     save_report(session_id, report_data)
+    record_report_generation("ok", perf_counter() - started)
     return report_data
 
 
 @app.get("/api/v1/reports/{session_id}/pdf")
 def report_pdf(session_id: str, current_user=Depends(get_current_user)):
+    started = perf_counter()
+    set_request_context(user_hash=hash_identifier(current_user.get("id")), session_id=session_id)
     session = assert_session_owner(session_id, current_user["id"])
     if not session:
         raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
@@ -514,9 +584,11 @@ def report_pdf(session_id: str, current_user=Depends(get_current_user)):
     try:
         pdf_buffer = build_report_pdf(report_data)
     except Exception as exc:
+        record_report_generation("error", perf_counter() - started)
         raise HTTPException(status_code=500, detail="pdf_generation_failed") from exc
 
     headers = {"Content-Disposition": f'attachment; filename="story-insights-report-{session_id}.pdf"'}
+    record_report_generation("ok", perf_counter() - started)
     return StreamingResponse(pdf_buffer, media_type="application/pdf", headers=headers)
 
 

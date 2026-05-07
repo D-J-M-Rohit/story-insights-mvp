@@ -6,6 +6,9 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from .config import settings
+from .logging_config import hash_identifier
+from .metrics import record_auth_failure
+from .request_context import set_request_context
 from .store import get_user_by_id
 
 pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
@@ -65,12 +68,16 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
     try:
         payload = decode_access_token(token)
     except JWTError as exc:
+        record_auth_failure("invalid_token")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token") from exc
 
     user_id = payload.get("sub")
     if not user_id:
+        record_auth_failure("invalid_token")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
     user = get_user_by_id(user_id)
     if not user:
+        record_auth_failure("invalid_token")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
+    set_request_context(user_hash=hash_identifier(user.get("id")))
     return {"id": user["id"], "email": user["email"], "role": user.get("role", "participant")}
