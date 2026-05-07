@@ -12,6 +12,8 @@ export default function AssessmentSessionRoute() {
   const [failed, setFailed] = useState(false);
   const navigate = useNavigate();
 
+  // Hydrate once per route param. Do not depend on navigate/setSession — unstable identities
+  // can retrigger this effect hundreds of times per second (429 + unusable UI).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -42,7 +44,8 @@ export default function AssessmentSessionRoute() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, navigate, setSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional single fetch per sessionId
+  }, [sessionId]);
 
   if (loading) return <div className="page center">Loading assessment...</div>;
   if (failed) return <Navigate to="/dashboard" replace />;

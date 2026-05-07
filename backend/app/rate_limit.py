@@ -86,6 +86,15 @@ RATE_LIMIT_POLICIES = [
         "key_scope": "ip",
         "cost": 1,
     },
+    # Session resume/state reads can spike during React Strict Mode or client bugs; keep generous.
+    {
+        "name": "session_reads",
+        "path_prefixes": ["/api/v1/sessions/"],
+        "capacity": 300,
+        "refill_rate_per_sec": 120,
+        "key_scope": "user_or_ip",
+        "cost": 1,
+    },
     {
         "name": "default_api",
         "path_prefixes": ["/api/v1"],

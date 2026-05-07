@@ -1,4 +1,4 @@
-import { createContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import AssessmentFlow from "./components/AssessmentFlow";
 import AssessmentSessionRoute from "./components/AssessmentSessionRoute";
@@ -9,6 +9,13 @@ import ReportViewer from "./components/ReportViewer";
 import { getMe, logout as logoutApi } from "./api";
 
 export const SessionContext = createContext(null);
+
+/** Must be a stable component identity — defining inside App remounts all children every App render (fetch storms / 429). */
+function RequireAuth({ children }) {
+  const ctx = useContext(SessionContext);
+  const user = ctx?.user;
+  return user ? children : <Navigate to="/auth" replace />;
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -29,11 +36,11 @@ export default function App() {
     rehydrate();
   }, []);
 
-  function login(userData) {
+  const login = useCallback((userData) => {
     setUser(userData);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     try {
       await logoutApi();
     } catch (_) {
@@ -41,14 +48,13 @@ export default function App() {
     }
     setUser(null);
     setSession(null);
-  }
+  }, []);
 
   const value = useMemo(
     () => ({ user, session, setSession, login, logout }),
-    [user, session]
+    [user, session, login, logout]
   );
 
-  const RequireAuth = ({ children }) => (user ? children : <Navigate to="/auth" replace />);
   if (authLoading) return <div className="page center">Loading...</div>;
 
   return (

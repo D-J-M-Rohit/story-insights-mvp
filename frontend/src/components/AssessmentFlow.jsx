@@ -59,25 +59,27 @@ export default function AssessmentFlow({ initialScene = null }) {
     };
   }, []);
 
+  const sessionId = session?.id;
+
   const loadFirst = useCallback(async () => {
-    if (!session?.id) return;
+    if (!sessionId) return;
     try {
-      const first = await getNextScene({ session_id: session.id });
+      const first = await getNextScene({ session_id: sessionId });
       setScene(first);
       resetTelemetry();
     } catch (e) {
       if (e.status === 410 || String(e.message || "").includes("assessment_complete")) {
-        navigate(`/report/${session.id}`);
+        navigate(`/report/${sessionId}`);
         return;
       }
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [session, resetTelemetry, navigate]);
+  }, [sessionId, resetTelemetry, navigate]);
 
   useEffect(() => {
-    if (!session?.id) return;
+    if (!sessionId) return;
     if (initialScene && initialScene.id) {
       setScene(initialScene);
       setLoading(false);
@@ -87,7 +89,8 @@ export default function AssessmentFlow({ initialScene = null }) {
     }
     setLoading(true);
     loadFirst();
-  }, [session?.id, initialScene?.id, loadFirst, initialScene, resetTelemetry]);
+    // Depend on ids only — full object identities can churn and refetch in a tight loop.
+  }, [sessionId, initialScene?.id, loadFirst, resetTelemetry]);
 
   function onHover(optionId) {
     const t = Math.round(performance.now() - startRef.current);
