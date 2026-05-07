@@ -20,15 +20,42 @@ export default function AssessmentFlow() {
 
   const startRef = useRef(performance.now());
   const hoverLogRef = useRef([]);
+  const hoverDwellRef = useRef({ A: 0, B: 0, C: 0 });
+  const hoverStartRef = useRef({});
+  const currentHoverRef = useRef(null);
   const firstHoverRef = useRef(null);
+  const lastHoverRef = useRef(null);
+  const optionViewOrderRef = useRef([]);
+  const focusLostCountRef = useRef(0);
   const hoverSwitchCountRef = useRef(0);
 
   const resetTelemetry = useCallback(() => {
     startRef.current = performance.now();
     hoverLogRef.current = [];
+    hoverDwellRef.current = { A: 0, B: 0, C: 0 };
+    hoverStartRef.current = {};
+    currentHoverRef.current = null;
     firstHoverRef.current = null;
+    lastHoverRef.current = null;
+    optionViewOrderRef.current = [];
+    focusLostCountRef.current = 0;
     hoverSwitchCountRef.current = 0;
     setSelected("");
+  }, []);
+
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === "hidden") focusLostCountRef.current += 1;
+    }
+    function onBlur() {
+      focusLostCountRef.current += 1;
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 
   const loadFirst = useCallback(async () => {
@@ -50,13 +77,27 @@ export default function AssessmentFlow() {
 
   function onHover(optionId) {
     const t = Math.round(performance.now() - startRef.current);
-    hoverLogRef.current.push({ option_id: optionId, t_ms: t });
+    if (hoverLogRef.current.length < 80) hoverLogRef.current.push({ event: "enter", option_id: optionId, t_ms: t });
+    hoverStartRef.current[optionId] = t;
+    currentHoverRef.current = optionId;
+    lastHoverRef.current = optionId;
     if (!firstHoverRef.current) {
       firstHoverRef.current = optionId;
-      return;
     }
+    if (!optionViewOrderRef.current.includes(optionId)) optionViewOrderRef.current.push(optionId);
     const prev = hoverLogRef.current.length > 1 ? hoverLogRef.current[hoverLogRef.current.length - 2].option_id : optionId;
-    if (prev !== optionId) hoverSwitchCountRef.current += 1;
+    if (prev && prev !== optionId) hoverSwitchCountRef.current += 1;
+  }
+
+  function onLeave(optionId) {
+    const t = Math.round(performance.now() - startRef.current);
+    if (hoverLogRef.current.length < 80) hoverLogRef.current.push({ event: "leave", option_id: optionId, t_ms: t });
+    const start = hoverStartRef.current[optionId];
+    if (start != null) {
+      hoverDwellRef.current[optionId] = (hoverDwellRef.current[optionId] || 0) + Math.max(0, t - start);
+      delete hoverStartRef.current[optionId];
+    }
+    if (currentHoverRef.current === optionId) currentHoverRef.current = null;
   }
 
   async function submitCurrent(forceTimeout = false) {
@@ -65,11 +106,25 @@ export default function AssessmentFlow() {
     setLoadingNext(true);
     setError("");
     const latency = Math.round(performance.now() - startRef.current);
+    if (currentHoverRef.current) onLeave(currentHoverRef.current);
+    const dwell = hoverDwellRef.current;
+    const dominant = Object.entries(dwell).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     const telemetry = {
       latency_ms: latency,
+      latency_ratio: scene.time_limit_sec ? latency / (scene.time_limit_sec * 1000) : 0,
       hover_log: hoverLogRef.current,
+      hover_dwell_ms_by_option: dwell,
       hover_switch_count: hoverSwitchCountRef.current,
-      changed_intent: Boolean(selected && firstHoverRef.current && selected !== firstHoverRef.current),
+      first_hovered_option_id: firstHoverRef.current,
+      last_hovered_option_id: lastHoverRef.current,
+      option_view_order: optionViewOrderRef.current,
+      focus_lost_count: focusLostCountRef.current,
+      browser_focus_lost: focusLostCountRef.current > 0,
+      changed_intent: Boolean(
+        selected &&
+          ((firstHoverRef.current && selected !== firstHoverRef.current) ||
+            (dominant && selected !== dominant))
+      ),
       timed_out: forceTimeout,
     };
     const chosen = scene.options.find((o) => o.id === selected);
@@ -113,12 +168,16 @@ export default function AssessmentFlow() {
               Target: {scene.scene_metadata.target_construct} · Difficulty: {scene.scene_metadata.difficulty}
             </p>
           )}
+          {import.meta.env.DEV && Array.isArray(scene?.scene_metadata?.context_fragment_ids) && (
+            <p className="muted small">Context: {scene.scene_metadata.context_fragment_ids.length} anchors</p>
+          )}
           <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
           <SceneRenderer
             scene={scene}
             selected={selected}
             onSelect={setSelected}
             onHover={onHover}
+            onLeave={onLeave}
             onSubmit={() => submitCurrent(false)}
             submitting={submitting}
           />

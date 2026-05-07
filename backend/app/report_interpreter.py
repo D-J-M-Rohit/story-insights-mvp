@@ -110,10 +110,12 @@ def llm_interpretation(report, scenario):
     prompt_payload = {
         "scenario": scenario,
         "metrics": trait_buckets,
+        "evidence_cards": report.get("evidence_cards", []),
         "instructions": {
             "output": "JSON only",
             "length": "Each field 1 to 3 sentences",
             "disclaimer": "experimental reflection only",
+            "evidence_rule": "Do not create new evidence. Use only provided evidence cards.",
             "forbidden_terms": [
                 "diagnosis",
                 "disorder",
@@ -127,6 +129,7 @@ def llm_interpretation(report, scenario):
         "You are writing a safe, friendly report explanation.\n"
         "Use only provided scenario and metrics.\n"
         "Do not invent or alter scores.\n"
+        "Do not create new evidence. Use only provided evidence cards.\n"
         "Return ONLY JSON with keys: decision_style, strengths, growth_areas, setting_specific_summary.\n\n"
         f"{json.dumps(prompt_payload)}"
     )

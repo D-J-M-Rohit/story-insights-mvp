@@ -45,15 +45,22 @@
     ]
   },
   "fragments": [
-    {
-      "id": "frag_escalation_chain",
-      "tags": ["decisiveness", "social", "deadline"],
-      "text": "A stakeholder escalates a delivery concern shortly before a review."
-    },
-    {
-      "id": "frag_credit_conflict",
-      "tags": ["social", "empathy", "conflict"],
-      "text": "A peer gets public credit for your contribution in front of leadership."
-    }
+    { "id": "frag_workplace_deadline_escalation", "content_type": "narrative_anchor", "tags": ["decisiveness", "social", "deadline", "stakeholder"], "difficulty_min": 0.30, "difficulty_max": 0.75, "text": "A stakeholder escalates a delivery concern shortly before a review." },
+    { "id": "frag_workplace_credit_conflict", "content_type": "narrative_anchor", "tags": ["social", "empathy", "conflict"], "difficulty_min": 0.20, "difficulty_max": 0.70, "text": "A teammate receives public credit for work you led." },
+    { "id": "frag_workplace_scope_change", "content_type": "narrative_anchor", "tags": ["risk", "tradeoff", "delivery"], "difficulty_min": 0.35, "difficulty_max": 0.80, "text": "Leadership asks for scope expansion without moving the deadline." },
+    { "id": "frag_workplace_cross_team_blocker", "content_type": "narrative_anchor", "tags": ["social", "communication", "priority"], "difficulty_min": 0.25, "difficulty_max": 0.70, "text": "A dependency team misses a handoff and your timeline is affected." },
+    { "id": "frag_workplace_customer_hot_issue", "content_type": "narrative_anchor", "tags": ["risk", "stakeholder", "urgency"], "difficulty_min": 0.40, "difficulty_max": 0.90, "text": "A key customer reports a production issue during a launch window." },
+
+    { "id": "anchor_workplace_risk", "content_type": "construct_anchor", "tags": ["risk", "tradeoff", "consequence"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Risk-focused scenes should contrast conservative, balanced, and bold choices with plausible outcomes." },
+    { "id": "anchor_workplace_social", "content_type": "construct_anchor", "tags": ["social", "team", "communication"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Social-focused scenes should vary collaboration intensity, stakeholder alignment, and communication strategy." },
+    { "id": "anchor_workplace_empathy", "content_type": "construct_anchor", "tags": ["empathy", "impact", "perspective"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Empathy-focused scenes should include human impact signals without becoming therapeutic or clinical." },
+    { "id": "anchor_workplace_decisiveness", "content_type": "construct_anchor", "tags": ["decisiveness", "deadline", "action"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Decisiveness scenes should reward timely direction while preserving realistic uncertainty." },
+    { "id": "anchor_workplace_emotional_regulation", "content_type": "construct_anchor", "tags": ["emotional_regulation", "pressure", "tone"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Emotional-regulation scenes should create pressure without panic, diagnosis, insults, or extreme crisis." },
+
+    { "id": "pattern_workplace_short_term_vs_long_term", "content_type": "consequence_pattern", "tags": ["risk", "consequence", "tradeoff"], "difficulty_min": 0.30, "difficulty_max": 0.85, "text": "Choices should balance immediate mitigation against longer-term delivery quality." },
+    { "id": "pattern_workplace_alignment_cost", "content_type": "consequence_pattern", "tags": ["social", "coordination", "priority"], "difficulty_min": 0.25, "difficulty_max": 0.80, "text": "Choices should expose tension between broad alignment and fast execution." },
+
+    { "id": "anti_repeat_bug_alert", "content_type": "anti_pattern", "tags": ["repetition", "workplace"], "difficulty_min": 0.00, "difficulty_max": 1.00, "text": "Avoid repeating a bug alert immediately before a stakeholder demo." },
+    { "id": "anti_repeat_credit_scene", "content_type": "anti_pattern", "tags": ["repetition", "workplace", "conflict"], "difficulty_min": 0.00, "difficulty_max": 1.00, "text": "Avoid repeating the same credit-dispute setup in consecutive turns." }
   ]
 }

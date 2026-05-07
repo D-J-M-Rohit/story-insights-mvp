@@ -62,29 +62,38 @@ def _infer_scene_metadata(options, time_limit_sec, turn):
 
 
 class LLMGateway:
-    def generate_scene(self, session, history, turn, policy=None, pack=None):
+    def generate_scene(self, session, history, turn, policy=None, pack=None, context_bundle=None):
         policy = policy or self.fallback_policy(session, turn, pack)
         pack = pack or {}
+        context_bundle = context_bundle or {
+            "context_version": "context_v1",
+            "retrieved_fragments": [],
+            "avoid_repetition": [],
+            "history_summary": "",
+            "recent_choices": [],
+        }
         provider = (settings.LLM_PROVIDER or "mock").lower()
         fallback_reason = None
         started = perf_counter()
         if provider == "openai":
-            scene = self.generate_openai_scene(session, history, turn, policy, pack)
+            scene = self.generate_openai_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
         elif provider == "gemini":
-            scene = self.generate_gemini_scene(session, history, turn, policy, pack)
+            scene = self.generate_gemini_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
         else:
-            scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
-        normalized = self.normalize_scene(scene, session["id"], turn, policy)
-        validation = validate_scene_against_policy(normalized, policy, pack)
+            scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+        normalized = self.normalize_scene(scene, session["id"], turn, policy, context_bundle)
+        validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
         if not validation["valid"] and provider in {"openai", "gemini"}:
-            retry_scene = self.generate_provider_scene(provider, session, history, turn, policy, pack, strict_retry=True)
-            normalized = self.normalize_scene(retry_scene, session["id"], turn, policy)
-            validation = validate_scene_against_policy(normalized, policy, pack)
+            retry_scene = self.generate_provider_scene(
+                provider, session, history, turn, policy, pack, context_bundle=context_bundle, strict_retry=True
+            )
+            normalized = self.normalize_scene(retry_scene, session["id"], turn, policy, context_bundle)
+            validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
         if not validation["valid"]:
             fallback_reason = "scene_validation_failed"
-            fallback_scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
-            normalized = self.normalize_scene(fallback_scene, session["id"], turn, policy)
-            validation = validate_scene_against_policy(normalized, policy, pack)
+            fallback_scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+            normalized = self.normalize_scene(fallback_scene, session["id"], turn, policy, context_bundle)
+            validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
         normalized["_meta"] = {
             "validation": validation,
             "fallback_reason": fallback_reason,
@@ -117,20 +126,28 @@ class LLMGateway:
             "rationale": {"reason": "fallback"},
         }
 
-    def generate_provider_scene(self, provider, session, history, turn, policy, pack, strict_retry=False):
+    def generate_provider_scene(self, provider, session, history, turn, policy, pack, context_bundle=None, strict_retry=False):
         if provider == "openai":
-            return self.generate_openai_scene(session, history, turn, policy, pack, strict_retry=strict_retry)
+            return self.generate_openai_scene(
+                session, history, turn, policy, pack, context_bundle=context_bundle, strict_retry=strict_retry
+            )
         if provider == "gemini":
-            return self.generate_gemini_scene(session, history, turn, policy, pack, strict_retry=strict_retry)
-        return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
+            return self.generate_gemini_scene(
+                session, history, turn, policy, pack, context_bundle=context_bundle, strict_retry=strict_retry
+            )
+        return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
 
-    def generate_mock_scene(self, session, history, turn, policy=None, pack=None):
+    def generate_mock_scene(self, session, history, turn, policy=None, pack=None, context_bundle=None):
         policy = policy or self.fallback_policy(session, turn, pack)
         scenario = session.get("scenario", "workplace")
         target = policy.get("target_construct", "social")
-        fragments = (pack or {}).get("fragments") or []
-        frag = fragments[(turn - 1) % len(fragments)]["text"] if fragments else "A time-sensitive issue emerges and stakeholders expect action."
+        context_bundle = context_bundle or {}
+        frag_candidates = context_bundle.get("retrieved_fragments") or []
+        frag = frag_candidates[0]["text"] if frag_candidates else "A time-sensitive issue emerges and stakeholders expect action."
         title = f"{scenario.title()} Decision Point {turn}"
+        avoid = " ".join(context_bundle.get("avoid_repetition", []))
+        if "previous scene title" in avoid.lower():
+            title = f"{scenario.title()} Fresh Decision {turn}"
         base_traits = {
             "risk": 0.5,
             "social": 0.5,
@@ -161,14 +178,17 @@ class LLMGateway:
                 "ambiguity": policy.get("ambiguity", 0.5),
                 "time_pressure": policy.get("time_pressure", 0.5),
                 "conflict_affordance": policy.get("conflict_affordance", 0.5),
+                "context_fragment_ids": [f.get("id") for f in frag_candidates if f.get("id")],
             },
         }
 
-    def generate_openai_scene(self, session, history, turn, policy, pack, strict_retry=False):
+    def generate_openai_scene(self, session, history, turn, policy, pack, context_bundle=None, strict_retry=False):
         try:
             from openai import OpenAI
 
-            prompt = build_scene_prompt(session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack)
+            prompt = build_scene_prompt(
+                session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack, context_bundle=context_bundle
+            )
             if strict_retry:
                 prompt += "\nSTRICT RETRY: follow schema exactly, include required metadata and target construct spread."
             model = settings.OPENAI_MODEL or "gpt-4.1-mini"
@@ -179,13 +199,15 @@ class LLMGateway:
                 text = str(response)
             return self.parse_scene_json(text)
         except Exception:
-            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
+            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
 
-    def generate_gemini_scene(self, session, history, turn, policy, pack, strict_retry=False):
+    def generate_gemini_scene(self, session, history, turn, policy, pack, context_bundle=None, strict_retry=False):
         try:
             from google import genai
 
-            prompt = build_scene_prompt(session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack)
+            prompt = build_scene_prompt(
+                session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack, context_bundle=context_bundle
+            )
             if strict_retry:
                 prompt += "\nSTRICT RETRY: follow schema exactly, include required metadata and target construct spread."
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -196,7 +218,7 @@ class LLMGateway:
             )
             return self.parse_scene_json(response.text)
         except Exception:
-            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack)
+            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
 
     def parse_scene_json(self, text):
         if not text:
@@ -207,7 +229,7 @@ class LLMGateway:
             raise ValueError("Malformed JSON response")
         return json.loads(text[start : end + 1])
 
-    def normalize_scene(self, data, session_id, turn, policy):
+    def normalize_scene(self, data, session_id, turn, policy, context_bundle=None):
         scene_id = str(uuid.uuid4())
         options_in = data.get("options", []) if isinstance(data, dict) else []
         ids = ["A", "B", "C"]
@@ -253,6 +275,10 @@ class LLMGateway:
             "scenario_pack_id": policy.get("scenario_pack_id"),
             "prompt_version": policy.get("prompt_version"),
             "policy_version": policy.get("policy_version"),
+            "context_version": (context_bundle or {}).get("context_version", "context_v1"),
+            "context_fragment_ids": [
+                f.get("id") for f in ((context_bundle or {}).get("retrieved_fragments") or []) if f.get("id")
+            ],
         }
         if isinstance(data, dict) and isinstance(data.get("scene_metadata"), dict):
             merged = dict(scene_metadata)

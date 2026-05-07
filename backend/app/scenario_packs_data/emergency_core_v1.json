@@ -45,15 +45,22 @@
     ]
   },
   "fragments": [
-    {
-      "id": "frag_triage_overload",
-      "tags": ["decisiveness", "risk", "triage"],
-      "text": "Two urgent requests arrive while response resources are constrained."
-    },
-    {
-      "id": "frag_comms_failure",
-      "tags": ["social", "emotional_regulation", "coordination"],
-      "text": "A communication channel fails during a fast-moving response update."
-    }
+    { "id": "frag_emergency_triage_split", "content_type": "narrative_anchor", "tags": ["decisiveness", "risk", "triage"], "difficulty_min": 0.35, "difficulty_max": 0.90, "text": "Two urgent incidents occur while only one response team is immediately available." },
+    { "id": "frag_emergency_comms_failure", "content_type": "narrative_anchor", "tags": ["social", "communication", "coordination"], "difficulty_min": 0.30, "difficulty_max": 0.85, "text": "A key communication channel drops during active coordination." },
+    { "id": "frag_emergency_public_crowd", "content_type": "narrative_anchor", "tags": ["risk", "public_safety", "uncertainty"], "difficulty_min": 0.35, "difficulty_max": 0.90, "text": "A crowd receives conflicting instructions near an evacuation zone." },
+    { "id": "frag_emergency_resource_reroute", "content_type": "narrative_anchor", "tags": ["decisiveness", "priority", "resource"], "difficulty_min": 0.30, "difficulty_max": 0.85, "text": "A critical resource shipment is delayed and teams request immediate rerouting." },
+    { "id": "frag_emergency_field_update_gap", "content_type": "narrative_anchor", "tags": ["empathy", "social", "impact"], "difficulty_min": 0.25, "difficulty_max": 0.75, "text": "Field responders report growing stress and need clear support direction." },
+
+    { "id": "anchor_emergency_risk", "content_type": "construct_anchor", "tags": ["risk", "consequence", "tradeoff"], "difficulty_min": 0.20, "difficulty_max": 0.95, "text": "Risk scenes should contrast cautious containment, balanced action, and bold intervention." },
+    { "id": "anchor_emergency_social", "content_type": "construct_anchor", "tags": ["social", "team", "stakeholder"], "difficulty_min": 0.20, "difficulty_max": 0.95, "text": "Social scenes should vary direct command, collaborative alignment, and independent execution." },
+    { "id": "anchor_emergency_empathy", "content_type": "construct_anchor", "tags": ["empathy", "support", "impact"], "difficulty_min": 0.20, "difficulty_max": 0.95, "text": "Empathy scenes should acknowledge people impact while preserving operational clarity." },
+    { "id": "anchor_emergency_decisiveness", "content_type": "construct_anchor", "tags": ["decisiveness", "urgency", "priority"], "difficulty_min": 0.20, "difficulty_max": 0.95, "text": "Decisiveness scenes should require fast prioritization under uncertainty." },
+    { "id": "anchor_emergency_emotional_regulation", "content_type": "construct_anchor", "tags": ["emotional_regulation", "pressure", "tone"], "difficulty_min": 0.20, "difficulty_max": 0.95, "text": "Emotional-regulation scenes should stress composure, pacing, and calm communication under load." },
+
+    { "id": "pattern_emergency_immediate_vs_downstream", "content_type": "consequence_pattern", "tags": ["risk", "consequence", "priority"], "difficulty_min": 0.30, "difficulty_max": 0.90, "text": "Choices should expose immediate stabilization versus downstream system impact." },
+    { "id": "pattern_emergency_alignment_vs_speed", "content_type": "consequence_pattern", "tags": ["social", "coordination", "deadline"], "difficulty_min": 0.30, "difficulty_max": 0.90, "text": "Choices should balance broad alignment with urgent action timing." },
+
+    { "id": "anti_repeat_evac_alarm", "content_type": "anti_pattern", "tags": ["repetition", "emergency"], "difficulty_min": 0.00, "difficulty_max": 1.00, "text": "Avoid repeating the same evacuation-alarm setup in consecutive turns." },
+    { "id": "anti_repeat_resource_shortage", "content_type": "anti_pattern", "tags": ["repetition", "emergency", "resource"], "difficulty_min": 0.00, "difficulty_max": 1.00, "text": "Avoid repeating identical resource-shortage dilemmas without new constraints." }
   ]
 }

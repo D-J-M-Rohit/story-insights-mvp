@@ -1,4 +1,4 @@
-export default function SceneRenderer({ scene, selected, onSelect, onHover, onSubmit, submitting }) {
+export default function SceneRenderer({ scene, selected, onSelect, onHover, onLeave, onSubmit, submitting }) {
   return (
     <div className="card">
       <h2>
@@ -11,6 +11,7 @@ export default function SceneRenderer({ scene, selected, onSelect, onHover, onSu
             key={opt.id}
             className={`option ${selected === opt.id ? "selected" : ""}`}
             onMouseEnter={() => onHover(opt.id)}
+            onMouseLeave={() => onLeave?.(opt.id)}
             onClick={() => onSelect(opt.id)}
           >
             <span className="badge">{opt.id}</span>

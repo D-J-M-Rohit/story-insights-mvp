@@ -28,7 +28,14 @@ class HoverEvent(BaseModel):
 class Telemetry(BaseModel):
     latency_ms: int = 0
     hover_log: List[HoverEvent] = Field(default_factory=list)
+    hover_dwell_ms_by_option: Optional[dict] = None
     hover_switch_count: int = 0
+    first_hovered_option_id: Optional[str] = None
+    last_hovered_option_id: Optional[str] = None
+    option_view_order: Optional[List[str]] = None
+    focus_lost_count: Optional[int] = 0
+    browser_focus_lost: Optional[bool] = False
+    latency_ratio: Optional[float] = None
     changed_intent: bool = False
     timed_out: bool = False
 
@@ -110,6 +117,37 @@ class ReportOut(BaseModel):
     pen: List[PenOut]
     choices: List[dict]
     interpretation: Optional[dict] = None
+    evidence_cards: Optional[List[dict]] = None
+
+
+class EvidenceCardOut(BaseModel):
+    feature_key: str
+    feature_name: str
+    score: float
+    bucket: str
+    label: str
+    evidence: List[str]
+    components: dict
+    source_choice_ids: List[str] = Field(default_factory=list)
+    disclaimer: str
+
+
+class GenerationTraceOut(BaseModel):
+    id: str
+    session_id: str
+    scene_id: Optional[str] = None
+    turn: int
+    trace_id: str
+    provider: Optional[str] = None
+    request_model: Optional[str] = None
+    status: str
+    duration_ms: Optional[int] = None
+    prompt_hash: Optional[str] = None
+    context_hash: Optional[str] = None
+    policy_hash: Optional[str] = None
+    response_hash: Optional[str] = None
+    fallback_reason: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class PolicyDecisionOut(BaseModel):
@@ -141,3 +179,11 @@ class PolicyPreviewRequest(BaseModel):
     session_id: Optional[str] = None
     turn: int
     choices: Optional[List[dict]] = None
+
+
+class ContextPreviewRequest(BaseModel):
+    session_id: Optional[str] = None
+    scenario: Optional[str] = None
+    scenario_pack_id: Optional[str] = None
+    turn: int = 1
+    policy: Optional[dict] = None

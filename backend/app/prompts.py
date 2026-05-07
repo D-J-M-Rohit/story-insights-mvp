@@ -1,7 +1,7 @@
 import json
 
 
-def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=None):
+def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=None, context_bundle=None):
     concise_history = []
     for item in history[-3:]:
         concise_history.append(
@@ -13,6 +13,13 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
         )
     policy = policy or {}
     pack = pack or {}
+    context_bundle = context_bundle or {
+        "context_version": "context_v1",
+        "history_summary": "",
+        "recent_choices": [],
+        "retrieved_fragments": [],
+        "avoid_repetition": [],
+    }
     schema = {
         "title": "string",
         "scene": "string",
@@ -28,6 +35,8 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
             "scenario_pack_id": policy.get("scenario_pack_id", ""),
             "prompt_version": policy.get("prompt_version", "scene_schema_v3"),
             "policy_version": policy.get("policy_version", "policy_v1")
+            ,
+            "context_fragment_ids": ["frag_id"]
         },
         "options": [
             {
@@ -66,6 +75,11 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
         f"Conflict affordance: {policy.get('conflict_affordance', 0.5)}\n"
         f"Required time_limit_sec: {policy.get('time_limit_sec', 45)}\n"
         f"Policy version: {policy.get('policy_version', 'policy_v1')}\n"
+        f"Grounding Context ({context_bundle.get('context_version', 'context_v1')}):\n"
+        f"- history_summary: {context_bundle.get('history_summary', '')}\n"
+        f"- recent_choices: {json.dumps(context_bundle.get('recent_choices', []))}\n"
+        f"- retrieved_fragments: {json.dumps(context_bundle.get('retrieved_fragments', []))}\n"
+        f"- avoid_repetition: {json.dumps(context_bundle.get('avoid_repetition', []))}\n"
         f"Previous summary: {json.dumps(concise_history)}\n\n"
         f"Safety constraints: {json.dumps((pack.get('safety_profile') or {}).get('forbid', []))}\n"
         "Rules:\n"
@@ -78,8 +92,12 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
         "- Each option must include construct_tags; include target construct in at least one option.\n"
         "- Target construct must differ meaningfully across options.\n"
         "- Include scene_metadata mirroring policy values for target_construct, difficulty, ambiguity, time_pressure, conflict_affordance.\n"
+        "- Include scene_metadata.context_fragment_ids list from relevant retrieved fragments.\n"
         "- Each option may include quality (0..1) and quality_dimensions (safety, ethics, effectiveness, long_term_utility).\n"
         "- Do not score the user.\n"
+        "- Use retrieved fragments only as grounding material; do not copy them verbatim.\n"
+        "- Do not contradict the previous story summary.\n"
+        "- Do not repeat previous scene setups.\n"
         "- Do not mention psychology, diagnosis, mental health, personality type, employability, or hiring fit.\n\n"
         f"Required JSON schema example: {json.dumps(schema)}"
     )

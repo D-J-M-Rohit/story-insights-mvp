@@ -121,3 +121,38 @@ Debugging endpoints:
 - `GET /api/v1/policy-traces/{session_id}`
 
 Mock mode still works without API keys.
+
+## Context Builder / RAG Preparation
+
+- Context Builder assembles compact story memory before scene generation.
+- It retrieves scenario-pack fragments by deterministic tag and difficulty scoring.
+- It adds anti-repetition constraints to reduce near-duplicate scene setups.
+- It stores `ContextTrace` records for auditability.
+- It does not send raw telemetry, auth data, emails, tokens, or passwords to the LLM prompt.
+- This is deterministic retrieval-first; vector embeddings/FAISS can be added later.
+
+Debug endpoints:
+- `GET /api/v1/context-traces/{session_id}`
+- `POST /api/v1/context/preview`
+
+Mock mode continues to work without API keys.
+
+## Generation Traces, Enhanced Telemetry, and Evidence Cards
+
+- Generation traces capture provider/model/status/timing/hash metadata per scene generation.
+- Traces support audit/debug and do not drive user scoring.
+- Prompt text is not persisted by default; prompt hashes are stored.
+- Enhanced telemetry captures dwell time, focus loss, hover switching, and intent-change signals.
+- No raw pointer movement coordinates or keystroke timing are collected.
+- Evidence cards explain deterministic score outputs with fixed behavioral components.
+- LLM summaries may paraphrase evidence but do not change scores/evidence.
+- Debug trace responses are sanitized.
+
+Endpoints:
+- `GET /api/v1/debug/sessions/{session_id}/traces?kind=generation`
+- `GET /api/v1/debug/scenes/{scene_id}/generation-trace`
+- `GET /api/v1/reports/{session_id}/evidence`
+
+Privacy notes:
+- No passwords/tokens/API keys/raw emails are stored in traces.
+- Raw telemetry is bounded and summarized.

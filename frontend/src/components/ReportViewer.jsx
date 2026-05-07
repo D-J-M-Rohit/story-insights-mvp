@@ -116,6 +116,29 @@ export default function ReportViewer() {
         </ResponsiveContainer>
       </div>
 
+      {(report.evidence_cards || []).length > 0 && (
+        <div className="card">
+          <h3>Why this score?</h3>
+          {import.meta.env.DEV && <p className="muted small">Evidence cards: {report.evidence_cards.length}</p>}
+          {(report.evidence_cards || []).map((card) => (
+            <details key={card.feature_key} className="evidence-card">
+              <summary>
+                {card.feature_name} - {card.score} <span className="bucket-pill">{card.bucket}</span>
+              </summary>
+              <p className="muted small">{card.label}</p>
+              <ul className="evidence-list">
+                {(card.evidence || []).map((e, idx) => (
+                  <li key={`${card.feature_key}-${idx}`}>{e}</li>
+                ))}
+              </ul>
+              {import.meta.env.DEV && (
+                <p className="muted small">sources: {(card.source_choice_ids || []).join(", ") || "none"}</p>
+              )}
+            </details>
+          ))}
+        </div>
+      )}
+
       <div className="card">
         <h3>PEN Proxies</h3>
         <ResponsiveContainer width="100%" height={320}>

@@ -23,6 +23,7 @@ def _valid_scene():
             "ambiguity": 0.55,
             "time_pressure": 0.65,
             "conflict_affordance": 0.58,
+            "context_fragment_ids": ["anchor_empathy_1"],
         },
         "options": [
             {"id": "A", "text": "Offer immediate support and re-plan work.", "traits": {"risk": 0.3, "social": 0.7, "empathy": 0.9, "decisiveness": 0.5, "emotional_regulation": 0.6}, "construct_tags": ["empathy"]},

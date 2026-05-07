@@ -6,6 +6,9 @@ from fastapi.responses import StreamingResponse
 
 from .auth import create_access_token, get_current_user, hash_password, password_too_long, verify_password
 from .config import settings
+from .context_builder import build_context_bundle
+from .evidence_mapper import attach_evidence_to_report, build_derived_features
+from .generation_trace import build_generation_trace_start, finalize_generation_trace
 from .llm_gateway import LLMGateway
 from .pdf_report import build_report_pdf
 from .policy_trace import build_output_hash, build_policy_trace
@@ -15,7 +18,10 @@ from .report_interpreter import generate_interpretation
 from .scenario_packs import get_default_pack_for_scenario, seed_builtin_packs, validate_pack
 from .scoring import score_session
 from .scene_validation import validate_scene_against_policy
+from .telemetry import normalize_telemetry
 from .schemas import (
+    ContextPreviewRequest,
+    GenerationTraceOut,
     NextSceneRequest,
     PolicyDecisionOut,
     PolicyPreviewRequest,
@@ -30,6 +36,12 @@ from .schemas import (
     UserRegister,
 )
 from .store import (
+    delete_derived_features,
+    get_generation_trace_for_scene,
+    list_generation_traces,
+    save_derived_features,
+    save_generation_trace,
+    update_generation_trace,
     assert_session_owner,
     complete_session,
     create_session,
@@ -39,17 +51,21 @@ from .store import (
     get_session,
     get_user_by_email,
     init_db,
+    get_context_trace,
     get_policy_trace,
     get_scenario_pack,
+    list_context_traces,
     list_policy_traces,
     list_scenario_packs,
     list_sessions_for_user,
     list_choices,
     list_scenes,
     save_choice,
+    save_context_trace,
     save_policy_trace,
     save_report,
     save_scene,
+    update_context_trace,
     update_policy_trace_scene,
     update_session_turn,
 )
@@ -169,6 +185,10 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
             if option["id"] == payload.choice_id:
                 selected_option = option
                 break
+        normalized_telemetry = normalize_telemetry(
+            (payload.telemetry.model_dump() if payload.telemetry else {}),
+            prev_scene.get("time_limit_sec", 45),
+        )
         save_choice(
             session_id=session["id"],
             scene_id=payload.scene_id,
@@ -176,7 +196,7 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
             option_id=payload.choice_id,
             option_text=selected_option["text"] if selected_option else "No selection",
             traits=selected_option["traits"] if selected_option else {},
-            telemetry=(payload.telemetry.model_dump() if payload.telemetry else {}),
+            telemetry=normalized_telemetry,
             time_limit_sec=prev_scene.get("time_limit_sec", 45),
             options=prev_scene.get("options") or [],
             scene_metadata=prev_scene.get("scene_metadata") or {},
@@ -216,7 +236,23 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
                 "selected_option": chosen["option_id"] if chosen else None,
             }
         )
-    prompt_preview = build_scene_prompt(session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack)
+    context_bundle, context_trace = build_context_bundle(
+        session=session,
+        scenes=scenes,
+        choices=choices,
+        policy={**policy, "turn": turn},
+        pack=pack,
+        policy_trace_id=None,
+    )
+    prompt_preview = build_scene_prompt(
+        session["scenario"],
+        turn,
+        session["max_turns"],
+        history,
+        policy=policy,
+        pack=pack,
+        context_bundle=context_bundle,
+    )
     trace = build_policy_trace(
         session_id=session["id"],
         turn=turn,
@@ -230,8 +266,32 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         prompt_text=prompt_preview,
     )
     trace_row = save_policy_trace(trace)
-    scene = gateway.generate_scene(session, history, turn, policy=policy, pack=pack)
-    validation = scene.get("_meta", {}).get("validation") or validate_scene_against_policy(scene, policy, pack)
+    context_bundle, context_trace = build_context_bundle(
+        session=session,
+        scenes=scenes,
+        choices=choices,
+        policy={**policy, "turn": turn},
+        pack=pack,
+        policy_trace_id=trace_row.get("id"),
+    )
+    saved_context_trace = save_context_trace(context_trace)
+    gen_trace = build_generation_trace_start(
+        session=session,
+        turn=turn,
+        provider=(settings.LLM_PROVIDER or "mock").lower(),
+        model=gateway.model_snapshot((settings.LLM_PROVIDER or "mock").lower()),
+        prompt=prompt_preview,
+        policy=policy,
+        context_bundle=context_bundle,
+        policy_trace=trace_row,
+        context_trace=saved_context_trace,
+    )
+    saved_gen_trace = save_generation_trace(gen_trace)
+    gen_started = perf_counter()
+    scene = gateway.generate_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+    validation = scene.get("_meta", {}).get("validation") or validate_scene_against_policy(
+        scene, policy, pack, context_bundle=context_bundle
+    )
     fallback_reason = scene.get("_meta", {}).get("fallback_reason")
     latency_ms = scene.get("_meta", {}).get("latency_ms", int((perf_counter() - started) * 1000))
     scene.pop("_meta", None)
@@ -243,6 +303,36 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         validation,
         latency_ms,
         fallback_reason,
+    )
+    update_context_trace(
+        trace_id=saved_context_trace["id"],
+        scene_id=scene["id"],
+        prompt_hash=trace_row.get("prompt_hash"),
+        output_hash=build_output_hash(scene),
+        latency_ms=context_trace.get("latency_ms"),
+    )
+    provider_name = (settings.LLM_PROVIDER or "mock").lower()
+    final_status = "ok" if provider_name == "mock" else ("fallback" if fallback_reason else "ok")
+    finalized_gen = finalize_generation_trace(
+        saved_gen_trace,
+        scene=scene,
+        status=final_status,
+        started_at_monotonic=gen_started,
+        provider_response_metadata={},
+        fallback_reason=(None if provider_name == "mock" else fallback_reason),
+        validation=validation,
+    )
+    update_generation_trace(
+        finalized_gen["id"],
+        scene_id=finalized_gen.get("scene_id"),
+        status=finalized_gen.get("status"),
+        duration_ms=finalized_gen.get("duration_ms"),
+        response_hash=finalized_gen.get("response_hash"),
+        token_usage_input=finalized_gen.get("token_usage_input"),
+        token_usage_output=finalized_gen.get("token_usage_output"),
+        fallback_reason=finalized_gen.get("fallback_reason"),
+        error_type=finalized_gen.get("error_type"),
+        trace_json_patch=finalized_gen.get("trace_json"),
     )
     return {
         "id": scene["id"],
@@ -333,19 +423,68 @@ def policy_trace_for_turn(session_id: str, turn: int, current_user=Depends(get_c
     return trace
 
 
+@app.get("/api/v1/context-traces/{session_id}")
+def context_traces(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    return list_context_traces(session_id)
+
+
+@app.get("/api/v1/context-traces/{session_id}/{turn}")
+def context_trace_for_turn(session_id: str, turn: int, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    trace = get_context_trace(session_id, turn)
+    if not trace:
+        raise HTTPException(status_code=404, detail="context_trace_not_found")
+    return trace
+
+
+@app.post("/api/v1/context/preview")
+def context_preview(payload: ContextPreviewRequest, current_user=Depends(get_current_user)):
+    if payload.session_id:
+        session = assert_session_owner(payload.session_id, current_user["id"])
+        if not session:
+            raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+        scenes = list_scenes(session["id"])
+        choices = list_choices(session["id"])
+        scenario = session["scenario"]
+    else:
+        scenario = payload.scenario or "workplace"
+        session = {"id": f"context-preview:{current_user['id']}", "scenario": scenario, "max_turns": 5}
+        scenes = []
+        choices = []
+    pack_row = get_scenario_pack(payload.scenario_pack_id) if payload.scenario_pack_id else None
+    pack = pack_row["pack_json"] if pack_row and pack_row.get("pack_json") else get_default_pack_for_scenario(scenario)
+    policy = payload.policy or decide_policy(session, choices, pack, payload.turn)
+    bundle, trace = build_context_bundle(
+        session=session,
+        scenes=scenes,
+        choices=choices,
+        policy={**policy, "turn": payload.turn},
+        pack=pack,
+        policy_trace_id=None,
+    )
+    return {"context_bundle": bundle, "retrieval_scores": trace.get("retrieval_scores_json", {})}
+
+
 @app.get("/api/v1/reports/{session_id}", response_model=ReportOut)
 def report(session_id: str, current_user=Depends(get_current_user)):
     session = assert_session_owner(session_id, current_user["id"])
     if not session:
         raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
     existing = get_report(session_id)
-    if existing and existing.get("interpretation"):
-        return existing
     if existing:
         report_data = existing
     else:
         choices = list_choices(session_id)
         report_data = score_session(session, choices)
+    choices = list_choices(session_id)
+    report_data = attach_evidence_to_report(report_data, choices)
+    delete_derived_features(session_id)
+    save_derived_features(session_id, build_derived_features(session, report_data, choices))
     report_data["scenario"] = report_data.get("scenario") or session.get("scenario")
     report_data["interpretation"] = report_data.get("interpretation") or generate_interpretation(
         report_data, report_data.get("scenario", "general")
@@ -373,3 +512,46 @@ def report_pdf(session_id: str, current_user=Depends(get_current_user)):
 
     headers = {"Content-Disposition": f'attachment; filename="story-insights-report-{session_id}.pdf"'}
     return StreamingResponse(pdf_buffer, media_type="application/pdf", headers=headers)
+
+
+@app.get("/api/v1/reports/{session_id}/evidence")
+def report_evidence(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    report_data = get_report(session_id)
+    if not report_data:
+        choices = list_choices(session_id)
+        report_data = score_session(session, choices)
+    if "evidence_cards" not in report_data:
+        report_data = attach_evidence_to_report(report_data, list_choices(session_id))
+        save_report(session_id, report_data)
+    return {"session_id": session_id, "evidence_cards": report_data.get("evidence_cards", [])}
+
+
+@app.get("/api/v1/debug/sessions/{session_id}/traces", response_model=list[GenerationTraceOut])
+def debug_session_traces(session_id: str, kind: str = "generation", current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    if kind != "generation":
+        return []
+    rows = list_generation_traces(session_id)
+    for row in rows:
+        row.pop("trace_json", None)
+    return rows
+
+
+@app.get("/api/v1/debug/scenes/{scene_id}/generation-trace", response_model=GenerationTraceOut)
+def debug_scene_trace(scene_id: str, current_user=Depends(get_current_user)):
+    scene = get_scene(scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    session = assert_session_owner(scene["session_id"], current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    row = get_generation_trace_for_scene(scene_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="generation_trace_not_found")
+    row.pop("trace_json", None)
+    return row

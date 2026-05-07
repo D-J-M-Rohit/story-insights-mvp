@@ -12,9 +12,10 @@ FORBIDDEN_TERMS = [
 REQUIRED_TRAITS = ["risk", "social", "empathy", "decisiveness", "emotional_regulation"]
 
 
-def validate_scene_against_policy(scene: dict, policy: dict, pack: dict) -> dict:
+def validate_scene_against_policy(scene: dict, policy: dict, pack: dict, context_bundle: dict | None = None) -> dict:
     errors = []
     warnings = []
+    context_bundle = context_bundle or {}
     if not scene.get("title"):
         errors.append("missing_title")
     if not scene.get("scene"):
@@ -65,6 +66,10 @@ def validate_scene_against_policy(scene: dict, policy: dict, pack: dict) -> dict
         meta = {}
     if meta.get("target_construct") != target:
         errors.append("target_construct_mismatch")
+    context_ids = meta.get("context_fragment_ids")
+    if not isinstance(context_ids, list):
+        errors.append("context_fragment_ids_missing_or_invalid")
+        context_ids = []
 
     def within(field: str, tol: float):
         if field not in meta:
@@ -83,4 +88,20 @@ def validate_scene_against_policy(scene: dict, policy: dict, pack: dict) -> dict
 
     if not errors and not pack:
         warnings.append("pack_missing_validation_soft")
+    retrieved = context_bundle.get("retrieved_fragments") or []
+    retrieved_ids = [f.get("id") for f in retrieved if f.get("id")]
+    if retrieved_ids:
+        if not any(rid in context_ids for rid in retrieved_ids):
+            warnings.append("missing_retrieved_fragment_reference")
+    else:
+        warnings.append("no_context_fragments_available")
+    recent = context_bundle.get("recent_choices") or []
+    if recent and recent[-1].get("scene_title") and scene.get("title") == recent[-1].get("scene_title"):
+        warnings.append("scene_title_repeats_previous")
+    scene_text = str(scene.get("scene", "")).lower()
+    for frag in retrieved:
+        frag_text = str(frag.get("text", "")).strip()
+        if len(frag_text) > 40 and frag_text.lower() in scene_text:
+            warnings.append("fragment_text_copied_verbatim")
+            break
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}

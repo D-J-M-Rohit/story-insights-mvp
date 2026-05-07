@@ -4,7 +4,19 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from .database import SessionLocal, init_db as _init_db
-from .models import Choice, PolicyTrace, PromptTemplate, Report, ScenarioPack, Scene, Session, User
+from .models import (
+    Choice,
+    ContextTrace,
+    DerivedFeature,
+    GenerationTrace,
+    PolicyTrace,
+    PromptTemplate,
+    Report,
+    ScenarioPack,
+    Scene,
+    Session,
+    User,
+)
 
 
 def _now():
@@ -315,3 +327,150 @@ def get_policy_trace(session_id: str, turn: int):
             select(PolicyTrace).where(PolicyTrace.session_id == session_id, PolicyTrace.turn == turn)
         ).scalar_one_or_none()
         return _to_dict(row)
+
+
+def save_context_trace(trace: dict):
+    with SessionLocal() as db:
+        row = ContextTrace(**trace)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def update_context_trace(
+    trace_id: str,
+    scene_id: str | None = None,
+    prompt_hash: str | None = None,
+    output_hash: str | None = None,
+    latency_ms: int | None = None,
+):
+    with SessionLocal() as db:
+        row = db.get(ContextTrace, trace_id)
+        if not row:
+            return None
+        if scene_id is not None:
+            row.scene_id = scene_id
+        if prompt_hash is not None:
+            row.prompt_hash = prompt_hash
+        if output_hash is not None:
+            row.output_hash = output_hash
+        if latency_ms is not None:
+            row.latency_ms = latency_ms
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def list_context_traces(session_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(ContextTrace).where(ContextTrace.session_id == session_id).order_by(ContextTrace.turn.asc())
+        ).scalars()
+        return [_to_dict(row) for row in rows]
+
+
+def get_context_trace(session_id: str, turn: int):
+    with SessionLocal() as db:
+        row = db.execute(
+            select(ContextTrace).where(ContextTrace.session_id == session_id, ContextTrace.turn == turn)
+        ).scalar_one_or_none()
+        return _to_dict(row)
+
+
+def save_generation_trace(trace: dict):
+    with SessionLocal() as db:
+        row = GenerationTrace(**trace)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def update_generation_trace(
+    trace_id_or_id: str,
+    scene_id: str | None = None,
+    status: str | None = None,
+    duration_ms: int | None = None,
+    response_hash: str | None = None,
+    token_usage_input: int | None = None,
+    token_usage_output: int | None = None,
+    fallback_reason: str | None = None,
+    error_type: str | None = None,
+    trace_json_patch: dict | None = None,
+):
+    with SessionLocal() as db:
+        row = db.get(GenerationTrace, trace_id_or_id)
+        if not row:
+            row = db.execute(select(GenerationTrace).where(GenerationTrace.trace_id == trace_id_or_id)).scalar_one_or_none()
+        if not row:
+            return None
+        if scene_id is not None:
+            row.scene_id = scene_id
+        if status is not None:
+            row.status = status
+        if duration_ms is not None:
+            row.duration_ms = duration_ms
+        if response_hash is not None:
+            row.response_hash = response_hash
+        if token_usage_input is not None:
+            row.token_usage_input = token_usage_input
+        if token_usage_output is not None:
+            row.token_usage_output = token_usage_output
+        if fallback_reason is not None:
+            row.fallback_reason = fallback_reason
+        if error_type is not None:
+            row.error_type = error_type
+        if trace_json_patch:
+            merged = dict(row.trace_json or {})
+            merged.update(trace_json_patch)
+            row.trace_json = merged
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def list_generation_traces(session_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(GenerationTrace).where(GenerationTrace.session_id == session_id).order_by(GenerationTrace.turn.asc())
+        ).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def get_generation_trace_for_scene(scene_id: str):
+    with SessionLocal() as db:
+        row = db.execute(select(GenerationTrace).where(GenerationTrace.scene_id == scene_id)).scalar_one_or_none()
+        return _to_dict(row)
+
+
+def save_derived_feature(feature: dict):
+    with SessionLocal() as db:
+        row = DerivedFeature(**feature)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def save_derived_features(session_id: str, features: list[dict]):
+    saved = []
+    for f in features or []:
+        payload = dict(f)
+        payload["session_id"] = session_id
+        saved.append(save_derived_feature(payload))
+    return saved
+
+
+def list_derived_features(session_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(select(DerivedFeature).where(DerivedFeature.session_id == session_id)).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def delete_derived_features(session_id: str) -> None:
+    with SessionLocal() as db:
+        rows = db.execute(select(DerivedFeature).where(DerivedFeature.session_id == session_id)).scalars().all()
+        for r in rows:
+            db.delete(r)
+        db.commit()

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -119,4 +119,72 @@ class PolicyTrace(Base):
     validation_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     fallback_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class ContextTrace(Base):
+    __tablename__ = "context_traces"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    session_id: Mapped[str] = mapped_column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    scene_id: Mapped[str | None] = mapped_column(String, ForeignKey("scenes.id"), nullable=True, index=True)
+    turn: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    scenario_pack_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    policy_trace_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    context_version: Mapped[str] = mapped_column(String, default="context_v1", nullable=False)
+    query_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    retrieved_fragment_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    retrieval_scores_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    context_bundle_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    context_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    prompt_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    output_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class GenerationTrace(Base):
+    __tablename__ = "generation_traces"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    session_id: Mapped[str] = mapped_column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    scene_id: Mapped[str | None] = mapped_column(String, ForeignKey("scenes.id"), nullable=True, index=True)
+    turn: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    trace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    span_id: Mapped[str] = mapped_column(String, nullable=False)
+    parent_trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    trace_kind: Mapped[str] = mapped_column(String, default="generation", nullable=False)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    response_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    operation_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    error_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    context_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    policy_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    response_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    token_usage_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    token_usage_output: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fallback_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    policy_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    context_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_template_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    trace_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class DerivedFeature(Base):
+    __tablename__ = "derived_features"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    session_id: Mapped[str] = mapped_column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    report_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    feature_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    feature_name: Mapped[str] = mapped_column(String, nullable=False)
+    feature_score: Mapped[float] = mapped_column(Float, nullable=False)
+    feature_bucket: Mapped[str] = mapped_column(String, nullable=False)
+    feature_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    source_choice_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    scorer_version: Mapped[str] = mapped_column(String, default="scoring_v1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)

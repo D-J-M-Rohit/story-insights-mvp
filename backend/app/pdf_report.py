@@ -51,6 +51,14 @@ def build_report_pdf(report: dict) -> BytesIO:
         pdf.drawString(x2, y + 14, str(feature.get("score", "-")))
         pdf.drawString(x3, y + 14, labels.get(feature.get("key"), "-")[:38])
 
+    cards = report.get("evidence_cards") or []
+    if cards:
+        line("Why this score?", "Helvetica-Bold", 13, 18)
+        for card in cards[:4]:
+            line(f"{card.get('feature_name', card.get('feature_key'))}: {card.get('score')} ({card.get('label','')})", size=10, gap=14)
+            for bullet in (card.get("evidence") or [])[:2]:
+                line(f"- {bullet[:100]}", size=9, gap=12)
+
     line(
         "Technical note: Scores are experimental and based on a short interactive session. "
         "They should not be treated as clinical, diagnostic, or hiring assessments.",

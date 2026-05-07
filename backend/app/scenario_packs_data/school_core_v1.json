@@ -45,15 +45,22 @@
     ]
   },
   "fragments": [
-    {
-      "id": "frag_integrity_check",
-      "tags": ["empathy", "risk", "integrity"],
-      "text": "A classmate shares unauthorized exam hints and asks for your help."
-    },
-    {
-      "id": "frag_team_deadline",
-      "tags": ["emotional_regulation", "social", "deadline"],
-      "text": "Your group misses an internal milestone before final submission."
-    }
+    { "id": "frag_school_integrity_request", "content_type": "narrative_anchor", "tags": ["risk", "integrity", "peer_pressure"], "difficulty_min": 0.25, "difficulty_max": 0.80, "text": "A classmate asks you to share restricted exam prep material." },
+    { "id": "frag_school_group_deadline", "content_type": "narrative_anchor", "tags": ["social", "deadline", "teamwork"], "difficulty_min": 0.25, "difficulty_max": 0.75, "text": "Your project team is behind schedule and members disagree on priorities." },
+    { "id": "frag_school_instructor_feedback", "content_type": "narrative_anchor", "tags": ["emotional_regulation", "feedback", "pressure"], "difficulty_min": 0.30, "difficulty_max": 0.80, "text": "An instructor gives blunt feedback one day before final submission." },
+    { "id": "frag_school_peer_exclusion", "content_type": "narrative_anchor", "tags": ["empathy", "social", "communication"], "difficulty_min": 0.20, "difficulty_max": 0.70, "text": "A teammate is excluded from planning messages and tensions are rising." },
+    { "id": "frag_school_schedule_collision", "content_type": "narrative_anchor", "tags": ["decisiveness", "priority", "tradeoff"], "difficulty_min": 0.30, "difficulty_max": 0.85, "text": "Two major deadlines collide and both groups expect your immediate input." },
+
+    { "id": "anchor_school_risk", "content_type": "construct_anchor", "tags": ["risk", "consequence", "integrity"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Risk scenes should contrast cautious, balanced, and bold responses with academic consequences." },
+    { "id": "anchor_school_social", "content_type": "construct_anchor", "tags": ["social", "team", "communication"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Social scenes should vary assertive, collaborative, and independent communication choices." },
+    { "id": "anchor_school_empathy", "content_type": "construct_anchor", "tags": ["empathy", "support", "impact"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Empathy scenes should include perspective-taking without therapeutic framing." },
+    { "id": "anchor_school_decisiveness", "content_type": "construct_anchor", "tags": ["decisiveness", "deadline", "action"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Decisiveness scenes should force prioritization under limited time." },
+    { "id": "anchor_school_emotional_regulation", "content_type": "construct_anchor", "tags": ["emotional_regulation", "tone", "pressure"], "difficulty_min": 0.20, "difficulty_max": 0.90, "text": "Emotional-regulation scenes should vary composure and response pacing under stress." },
+
+    { "id": "pattern_school_short_term_grade_vs_learning", "content_type": "consequence_pattern", "tags": ["risk", "tradeoff", "outcomes"], "difficulty_min": 0.25, "difficulty_max": 0.85, "text": "Choices should contrast immediate grade protection with long-term learning quality." },
+    { "id": "pattern_school_relationship_vs_speed", "content_type": "consequence_pattern", "tags": ["social", "priority", "team"], "difficulty_min": 0.20, "difficulty_max": 0.80, "text": "Choices should surface tension between team relationships and rapid completion." },
+
+    { "id": "anti_repeat_exam_leak", "content_type": "anti_pattern", "tags": ["repetition", "school"], "difficulty_min": 0.00, "difficulty_max": 1.00, "text": "Avoid repeating leaked-exam scenarios in consecutive turns." },
+    { "id": "anti_repeat_group_conflict", "content_type": "anti_pattern", "tags": ["repetition", "school", "teamwork"], "difficulty_min": 0.00, "difficulty_max": 1.00, "text": "Avoid repeating the same team-conflict setup without new stakes." }
   ]
 }
