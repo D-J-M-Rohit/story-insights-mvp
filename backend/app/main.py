@@ -8,10 +8,21 @@ from .auth import create_access_token, get_current_user, hash_password, password
 from .config import settings
 from .context_builder import build_context_bundle
 from .evidence_mapper import attach_evidence_to_report, build_derived_features
+from .feedback import build_feedback_event, normalize_feedback_payload, sanitize_feedback_event
 from .generation_trace import build_generation_trace_start, finalize_generation_trace
 from .llm_gateway import LLMGateway
 from .logging_config import configure_logging, hash_identifier, log_event
-from .metrics import metrics_response, record_auth_failure, record_report_generation, record_request
+from .metrics import (
+    metrics_response,
+    record_auth_failure,
+    record_feedback_event,
+    record_feedback_flagged,
+    record_feedback_opt_in,
+    record_feedback_review_latency,
+    record_report_generation,
+    record_request,
+    set_feedback_admin_queue_size,
+)
 from .pdf_report import build_report_pdf
 from .policy_trace import build_output_hash, build_policy_trace
 from .prompt_policy import POLICY_VERSION, build_policy_input, decide_policy
@@ -26,6 +37,10 @@ from .telemetry import normalize_telemetry
 from .schemas import (
     ConfidenceOut,
     ContextPreviewRequest,
+    FeedbackCreate,
+    FeedbackOut,
+    FeedbackReview,
+    FeedbackSummaryOut,
     DerivedFeatureOut,
     GenerationTraceOut,
     NextSceneRequest,
@@ -64,13 +79,19 @@ from .store import (
     get_context_trace,
     get_policy_trace,
     get_scenario_pack,
+    get_feedback_event,
+    get_feedback_profile,
     list_context_traces,
+    list_feedback_for_admin,
+    list_feedback_for_session,
+    list_feedback_for_user,
     list_policy_traces,
     list_scenario_packs,
     list_sessions_for_user,
     list_choices,
     list_scenes,
     save_choice,
+    create_feedback_event,
     save_context_trace,
     save_policy_trace,
     save_report,
@@ -78,6 +99,9 @@ from .store import (
     update_context_trace,
     update_policy_trace_scene,
     update_session_turn,
+    purge_old_feedback_comments,
+    review_feedback_event,
+    rollup_feedback_daily_metrics,
 )
 
 app = FastAPI(title="Story Insights MVP")
@@ -157,6 +181,11 @@ def provider_metrics_summary(current_user=Depends(get_current_user)):
         "fallback_counts": snap.get("recent_fallback_reasons", {}),
         "latency_summary": snap.get("latency_ms", {}),
     }
+
+
+def _require_admin(current_user):
+    if (current_user or {}).get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin_required")
 
 
 @app.post("/api/v1/auth/register", response_model=TokenOut)
@@ -295,6 +324,7 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         pack = get_default_pack_for_scenario(session["scenario"])
 
     policy = decide_policy(session, choices, pack, turn)
+    feedback_profile = get_feedback_profile(session["id"])
     policy_input = build_policy_input(session, choices, pack, turn)
     history = []
     for sc in scenes:
@@ -313,6 +343,7 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         policy={**policy, "turn": turn},
         pack=pack,
         policy_trace_id=None,
+        feedback_profile=feedback_profile,
     )
     prompt_preview = build_scene_prompt(
         session["scenario"],
@@ -343,6 +374,7 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         policy={**policy, "turn": turn},
         pack=pack,
         policy_trace_id=trace_row.get("id"),
+        feedback_profile=feedback_profile,
     )
     saved_context_trace = save_context_trace(context_trace)
     gen_trace = build_generation_trace_start(
@@ -536,8 +568,145 @@ def context_preview(payload: ContextPreviewRequest, current_user=Depends(get_cur
         policy={**policy, "turn": payload.turn},
         pack=pack,
         policy_trace_id=None,
+        feedback_profile=(get_feedback_profile(session["id"]) if payload.session_id else None),
     )
     return {"context_bundle": bundle, "retrieval_scores": trace.get("retrieval_scores_json", {})}
+
+
+@app.post("/api/v1/feedback")
+def submit_feedback(payload: FeedbackCreate, current_user=Depends(get_current_user)):
+    if not settings.FEEDBACK_ENABLED:
+        raise HTTPException(status_code=404, detail="feedback_disabled")
+    session = assert_session_owner(payload.session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    if payload.report_id and payload.report_id != payload.session_id:
+        raise HTTPException(status_code=400, detail="invalid_report_reference")
+    report_data = get_report(payload.session_id) if payload.report_id else None
+    scene = get_scene(payload.scene_id) if payload.scene_id else None
+    try:
+        normalized = normalize_feedback_payload(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    event = build_feedback_event(normalized, current_user=current_user, session=session, scene=scene, report=report_data)
+    saved = create_feedback_event(event)
+    record_feedback_event(
+        channel=saved.get("channel"),
+        feedback_type=saved.get("feedback_type"),
+        category=saved.get("category") or "unknown",
+        status=saved.get("moderation_status"),
+    )
+    if saved.get("consent_comment"):
+        record_feedback_opt_in(saved.get("channel"))
+    for reason in saved.get("moderation_flags_json") or []:
+        record_feedback_flagged(reason)
+    if saved.get("moderation_status") == "flagged":
+        log_event(
+            "feedback_flagged",
+            feedback_id=saved.get("id"),
+            session_id=saved.get("session_id"),
+            moderation_flags=saved.get("moderation_flags_json") or [],
+        )
+    log_event(
+        "feedback_submitted",
+        feedback_id=saved.get("id"),
+        session_id=saved.get("session_id"),
+        channel=saved.get("channel"),
+        feedback_type=saved.get("feedback_type"),
+        moderation_status=saved.get("moderation_status"),
+        moderation_flags=saved.get("moderation_flags_json") or [],
+    )
+    return {
+        "id": saved.get("id"),
+        "status": "accepted",
+        "moderation_status": saved.get("moderation_status"),
+        "raw_retention_until": sanitize_feedback_event(saved).get("raw_retention_until"),
+    }
+
+
+@app.get("/api/v1/feedback/my", response_model=list[FeedbackOut])
+def my_feedback(session_id: str | None = None, current_user=Depends(get_current_user)):
+    if session_id:
+        session = assert_session_owner(session_id, current_user["id"])
+        if not session:
+            raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    rows = list_feedback_for_user(current_user["id"], session_id=session_id)
+    return [sanitize_feedback_event(r, include_comment=True) for r in rows]
+
+
+@app.get("/api/v1/feedback/summary", response_model=FeedbackSummaryOut)
+def feedback_summary(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    rows = list_feedback_for_session(session_id)
+    useful = [r.get("rating_useful") for r in rows if r.get("rating_useful") is not None]
+    engaging = [r.get("rating_engaging") for r in rows if r.get("rating_engaging") is not None]
+    tags = {}
+    for row in rows:
+        for tag in row.get("tags_json") or []:
+            tags[tag] = tags.get(tag, 0) + 1
+    created_values = [r.get("created_at") for r in rows if r.get("created_at") is not None]
+    latest = max(created_values) if created_values else None
+    return {
+        "session_id": session_id,
+        "submitted_count": len(rows),
+        "avg_useful": (sum(useful) / len(useful)) if useful else None,
+        "avg_engaging": (sum(engaging) / len(engaging)) if engaging else None,
+        "tags": tags,
+        "flagged_count": sum(1 for r in rows if r.get("moderation_status") == "flagged"),
+        "latest_created_at": latest,
+    }
+
+
+@app.get("/api/v1/admin/feedback", response_model=list[FeedbackOut])
+def admin_feedback_list(status: str = "flagged", limit: int = 50, offset: int = 0, current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    rows = list_feedback_for_admin(status=status, limit=limit, offset=offset)
+    set_feedback_admin_queue_size(len(rows))
+    return [sanitize_feedback_event(r, include_comment=True) for r in rows]
+
+
+@app.patch("/api/v1/admin/feedback/{feedback_id}", response_model=FeedbackOut)
+def admin_feedback_review(feedback_id: str, payload: FeedbackReview, current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    if payload.moderation_status not in {"clean", "flagged", "redacted", "deleted", "resolved"}:
+        raise HTTPException(status_code=400, detail="invalid_moderation_status")
+    before = get_feedback_event(feedback_id)
+    row = review_feedback_event(feedback_id, payload.moderation_status, payload.reviewer_note)
+    if not row:
+        raise HTTPException(status_code=404, detail="feedback_not_found")
+    if before and before.get("created_at") and row.get("reviewed_at"):
+        try:
+            from datetime import datetime
+
+            created_dt = datetime.fromisoformat(str(before["created_at"]).replace("Z", "+00:00"))
+            reviewed_dt = datetime.fromisoformat(str(row["reviewed_at"]).replace("Z", "+00:00"))
+            record_feedback_review_latency((reviewed_dt - created_dt).total_seconds())
+        except Exception:
+            pass
+    log_event(
+        "feedback_reviewed",
+        feedback_id=row.get("id"),
+        session_id=row.get("session_id"),
+        moderation_status=row.get("moderation_status"),
+    )
+    return sanitize_feedback_event(row, include_comment=True)
+
+
+@app.post("/api/v1/admin/feedback/rollup")
+def admin_feedback_rollup(current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    result = rollup_feedback_daily_metrics(settings.FEEDBACK_AGGREGATE_RETENTION_DAYS)
+    return result
+
+
+@app.post("/api/v1/admin/feedback/purge-old")
+def admin_feedback_purge_old(current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    purged = purge_old_feedback_comments(settings.FEEDBACK_RAW_RETENTION_DAYS)
+    log_event("feedback_purged", purged_count=purged)
+    return {"purged_count": purged}
 
 
 @app.get("/api/v1/reports/{session_id}", response_model=ReportOut)

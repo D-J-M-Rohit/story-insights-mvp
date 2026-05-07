@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -8,6 +9,8 @@ from .models import (
     Choice,
     ContextTrace,
     DerivedFeature,
+    FeedbackDailyMetric,
+    FeedbackEvent,
     GenerationTrace,
     PolicyTrace,
     PromptTemplate,
@@ -35,6 +38,17 @@ def _to_dict(model):
             continue
         out[key] = value
     return out
+
+
+def _coerce_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return _now()
+    return value
 
 
 def init_db():
@@ -284,7 +298,10 @@ def list_scenario_packs():
 
 def save_policy_trace(trace: dict):
     with SessionLocal() as db:
-        row = PolicyTrace(**trace)
+        payload = dict(trace)
+        if "created_at" in payload:
+            payload["created_at"] = _coerce_datetime(payload["created_at"])
+        row = PolicyTrace(**payload)
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -331,7 +348,10 @@ def get_policy_trace(session_id: str, turn: int):
 
 def save_context_trace(trace: dict):
     with SessionLocal() as db:
-        row = ContextTrace(**trace)
+        payload = dict(trace)
+        if "created_at" in payload:
+            payload["created_at"] = _coerce_datetime(payload["created_at"])
+        row = ContextTrace(**payload)
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -380,7 +400,10 @@ def get_context_trace(session_id: str, turn: int):
 
 def save_generation_trace(trace: dict):
     with SessionLocal() as db:
-        row = GenerationTrace(**trace)
+        payload = dict(trace)
+        if "created_at" in payload:
+            payload["created_at"] = _coerce_datetime(payload["created_at"])
+        row = GenerationTrace(**payload)
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -474,3 +497,140 @@ def delete_derived_features(session_id: str) -> None:
         for r in rows:
             db.delete(r)
         db.commit()
+
+
+def create_feedback_event(event: dict) -> dict:
+    with SessionLocal() as db:
+        row = FeedbackEvent(**event)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def get_feedback_event(feedback_id: str):
+    with SessionLocal() as db:
+        row = db.get(FeedbackEvent, feedback_id)
+        return _to_dict(row)
+
+
+def list_feedback_for_user(user_id: str, session_id: str | None = None):
+    with SessionLocal() as db:
+        query = select(FeedbackEvent).where(FeedbackEvent.user_id == user_id)
+        if session_id:
+            query = query.where(FeedbackEvent.session_id == session_id)
+        rows = db.execute(query.order_by(FeedbackEvent.created_at.desc())).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def list_feedback_for_session(session_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(FeedbackEvent).where(FeedbackEvent.session_id == session_id).order_by(FeedbackEvent.created_at.desc())
+        ).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def list_feedback_for_admin(status: str | None = None, limit: int = 50, offset: int = 0):
+    with SessionLocal() as db:
+        query = select(FeedbackEvent)
+        if status:
+            query = query.where(FeedbackEvent.moderation_status == status)
+        rows = db.execute(query.order_by(FeedbackEvent.created_at.desc()).offset(offset).limit(limit)).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def review_feedback_event(feedback_id: str, moderation_status: str, reviewer_note: str | None = None):
+    with SessionLocal() as db:
+        row = db.get(FeedbackEvent, feedback_id)
+        if not row:
+            return None
+        row.moderation_status = moderation_status
+        row.reviewer_note = reviewer_note
+        row.reviewed_at = _now()
+        if moderation_status == "deleted":
+            row.comment = None
+            row.comment_redacted = None
+        elif moderation_status == "redacted":
+            row.comment = None
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def purge_old_feedback_comments(retention_days: int = 90) -> int:
+    cutoff = _now() - timedelta(days=int(retention_days or 90))
+    purged = 0
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(FeedbackEvent).where(FeedbackEvent.created_at < cutoff, FeedbackEvent.comment.is_not(None))
+        ).scalars().all()
+        for row in rows:
+            row.comment = None
+            row.comment_redacted = None
+            purged += 1
+        db.commit()
+    return purged
+
+
+def rollup_feedback_daily_metrics(retention_days: int = 365) -> dict:
+    with SessionLocal() as db:
+        events = db.execute(select(FeedbackEvent)).scalars().all()
+        grouped = {}
+        for e in events:
+            day = (e.created_at.date().isoformat() if e.created_at else "")
+            scenario = (e.evidence_ref_json or {}).get("scenario")
+            scenario_pack_id = (e.evidence_ref_json or {}).get("scenario_pack_id")
+            key = (day, scenario, scenario_pack_id, e.channel, e.feedback_type)
+            grouped.setdefault(key, []).append(e)
+        upserts = 0
+        for (day, scenario, scenario_pack_id, channel, feedback_type), rows in grouped.items():
+            useful = [r.rating_useful for r in rows if r.rating_useful is not None]
+            engaging = [r.rating_engaging for r in rows if r.rating_engaging is not None]
+            tag_counter = Counter()
+            for r in rows:
+                tag_counter.update(r.tags_json or [])
+            existing = db.execute(
+                select(FeedbackDailyMetric).where(
+                    FeedbackDailyMetric.day == day,
+                    FeedbackDailyMetric.scenario == scenario,
+                    FeedbackDailyMetric.scenario_pack_id == scenario_pack_id,
+                    FeedbackDailyMetric.channel == channel,
+                    FeedbackDailyMetric.feedback_type == feedback_type,
+                )
+            ).scalar_one_or_none()
+            payload = {
+                "day": day,
+                "scenario": scenario,
+                "scenario_pack_id": scenario_pack_id,
+                "channel": channel,
+                "feedback_type": feedback_type,
+                "submitted_count": len(rows),
+                "flagged_count": sum(1 for r in rows if r.moderation_status == "flagged"),
+                "dismissed_count": sum(1 for r in rows if r.moderation_status == "deleted"),
+                "avg_useful": (sum(useful) / len(useful)) if useful else None,
+                "avg_engaging": (sum(engaging) / len(engaging)) if engaging else None,
+                "tags_json": dict(tag_counter),
+                "updated_at": _now(),
+            }
+            if existing:
+                for k, v in payload.items():
+                    setattr(existing, k, v)
+            else:
+                db.add(FeedbackDailyMetric(id=str(uuid.uuid4()), created_at=_now(), **payload))
+            upserts += 1
+        cutoff = (_now() - timedelta(days=int(retention_days or 365))).date().isoformat()
+        old = db.execute(select(FeedbackDailyMetric).where(FeedbackDailyMetric.day < cutoff)).scalars().all()
+        deleted = len(old)
+        for row in old:
+            db.delete(row)
+        db.commit()
+    return {"upserted": upserts, "deleted_old": deleted}
+
+
+def get_feedback_profile(session_id: str) -> dict:
+    from .feedback import build_feedback_profile
+
+    events = list_feedback_for_session(session_id)
+    current_turn = max([int(e.get("turn") or 0) for e in events] + [0])
+    return build_feedback_profile(events, current_turn=current_turn)

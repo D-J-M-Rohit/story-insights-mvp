@@ -80,6 +80,7 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
         f"- recent_choices: {json.dumps(context_bundle.get('recent_choices', []))}\n"
         f"- retrieved_fragments: {json.dumps(context_bundle.get('retrieved_fragments', []))}\n"
         f"- avoid_repetition: {json.dumps(context_bundle.get('avoid_repetition', []))}\n"
+        f"- feedback_profile: {json.dumps((context_bundle.get('feedback_profile') or {}))}\n"
         f"Previous summary: {json.dumps(concise_history)}\n\n"
         f"Safety constraints: {json.dumps((pack.get('safety_profile') or {}).get('forbid', []))}\n"
         "Rules:\n"
@@ -98,6 +99,8 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
         "- Use retrieved fragments only as grounding material; do not copy them verbatim.\n"
         "- Do not contradict the previous story summary.\n"
         "- Do not repeat previous scene setups.\n"
+        "- Presentation feedback hints may guide wording/clarity/tone only.\n"
+        "- Do not change target construct, difficulty, option trait values, scoring logic, scenario-pack coverage, or validation thresholds.\n"
         "- Do not mention psychology, diagnosis, mental health, personality type, employability, or hiring fit.\n\n"
         f"Required JSON schema example: {json.dumps(schema)}"
     )

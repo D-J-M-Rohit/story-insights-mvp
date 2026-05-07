@@ -195,3 +195,48 @@ class DerivedFeature(Base):
     source_choice_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     scorer_version: Mapped[str] = mapped_column(String, default="scoring_v1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class FeedbackEvent(Base):
+    __tablename__ = "feedback_events"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True, index=True)
+    session_id: Mapped[str] = mapped_column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    scene_id: Mapped[str | None] = mapped_column(String, ForeignKey("scenes.id"), nullable=True, index=True)
+    report_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    feedback_type: Mapped[str] = mapped_column(String, nullable=False)
+    channel: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
+    rating_useful: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rating_engaging: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tags_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comment_redacted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    consent_comment: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    moderation_status: Mapped[str] = mapped_column(String, default="clean", nullable=False, index=True)
+    moderation_flags_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    evidence_ref_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class FeedbackDailyMetric(Base):
+    __tablename__ = "feedback_daily_metrics"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    day: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    scenario: Mapped[str | None] = mapped_column(String, nullable=True)
+    scenario_pack_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    channel: Mapped[str] = mapped_column(String, nullable=False)
+    feedback_type: Mapped[str] = mapped_column(String, nullable=False)
+    submitted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    flagged_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    dismissed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    avg_useful: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_engaging: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tags_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)

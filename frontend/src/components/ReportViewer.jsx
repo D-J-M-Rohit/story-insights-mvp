@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { downloadReportPdf, getReport } from "../api";
 import { SessionContext } from "../App";
+import FeedbackCard from "./FeedbackCard";
 
 export default function ReportViewer() {
   const { sessionId } = useParams();
@@ -187,6 +188,7 @@ export default function ReportViewer() {
       <button onClick={onDownloadPdf} disabled={downloading}>
         {downloading ? "Preparing PDF..." : "Download PDF"}
       </button>
+      <FeedbackCard sessionId={sessionId} reportId={report.session_id || sessionId} />
       <Link className="button-link" to="/dashboard">Back to dashboard</Link>
     </div>
   );

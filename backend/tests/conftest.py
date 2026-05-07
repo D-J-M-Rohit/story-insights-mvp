@@ -23,11 +23,15 @@ def test_client(tmp_path_factory):
 
     import app.config as config
     import app.database as database
+    import app.models as models
+    import app.store as store
     import app.main as main
     import app.rate_limit as rate_limit
 
     importlib.reload(config)
     importlib.reload(database)
+    importlib.reload(models)
+    importlib.reload(store)
     importlib.reload(main)
     rate_limit.RATE_LIMIT_POLICIES = []
 

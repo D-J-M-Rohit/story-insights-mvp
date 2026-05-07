@@ -21,7 +21,8 @@ async function request(path, options = {}, requireAuth = true) {
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const err = new Error(body.detail || "request_failed");
+    const message = res.status === 429 ? "Too many requests. Please try again in a moment." : body.detail || "request_failed";
+    const err = new Error(message);
     err.status = res.status;
     throw err;
   }
@@ -69,4 +70,25 @@ export async function downloadReportPdf(sessionId) {
     throw new Error(body.detail || "pdf_download_failed");
   }
   return res.blob();
+}
+
+export function submitFeedback(payload) {
+  return request("/api/v1/feedback", { method: "POST", body: JSON.stringify(payload) }, true);
+}
+
+export function getMyFeedback(sessionId) {
+  const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  return request(`/api/v1/feedback/my${qs}`, {}, true);
+}
+
+export function getFeedbackSummary(sessionId) {
+  return request(`/api/v1/feedback/summary?session_id=${encodeURIComponent(sessionId)}`, {}, true);
+}
+
+export function adminListFeedback(status = "flagged") {
+  return request(`/api/v1/admin/feedback?status=${encodeURIComponent(status)}`, {}, true);
+}
+
+export function adminReviewFeedback(feedbackId, payload) {
+  return request(`/api/v1/admin/feedback/${feedbackId}`, { method: "PATCH", body: JSON.stringify(payload) }, true);
 }

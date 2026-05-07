@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     METRICS_ENABLED: bool = True
     PROVIDER_HEALTH_WINDOW: int = 50
     SLOW_SCENE_GENERATION_MS: int = 3000
+    FEEDBACK_ENABLED: bool = True
+    FEEDBACK_COMMENT_MAX_CHARS: int = 300
+    FEEDBACK_RAW_RETENTION_DAYS: int = 90
+    FEEDBACK_AGGREGATE_RETENTION_DAYS: int = 365
+    FEEDBACK_MICRO_PROMPT_ENABLED: bool = True
+    FEEDBACK_MICRO_PROMPT_TURN: int = 2
+    FEEDBACK_STYLE_HINT_TTL_TURNS: int = 2
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

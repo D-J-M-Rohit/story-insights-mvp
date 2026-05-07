@@ -94,6 +94,7 @@ def build_context_bundle(
     policy: dict,
     pack: dict,
     policy_trace_id: str | None = None,
+    feedback_profile: dict | None = None,
 ) -> tuple[dict, dict]:
     started = perf_counter()
     fallback_reason = None
@@ -128,6 +129,11 @@ def build_context_bundle(
             "conflict_affordance": policy.get("conflict_affordance"),
         },
     }
+    if feedback_profile and feedback_profile.get("hints"):
+        bundle["feedback_profile"] = {
+            "hints": dict(feedback_profile.get("hints") or {}),
+            "expires_after_turn": feedback_profile.get("expires_after_turn"),
+        }
     if fallback_reason:
         bundle["fallback_reason"] = fallback_reason
         query["fallback_reason"] = fallback_reason

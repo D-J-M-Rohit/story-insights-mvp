@@ -252,3 +252,60 @@ button:disabled {
   font-size: 0.85rem;
   color: #6b7280;
 }
+
+.feedback-card textarea {
+  width: 100%;
+  min-height: 80px;
+  margin-top: 6px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  padding: 8px;
+}
+
+.feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rating-button {
+  width: auto;
+  min-width: 36px;
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.rating-button.selected {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.tag-chip {
+  width: auto;
+  background: #f3f4f6;
+  color: #111827;
+  border: 1px solid #d1d5db;
+}
+
+.tag-chip.selected {
+  background: #e0e7ff;
+  border-color: #6366f1;
+  color: #312e81;
+}
+
+.micro-feedback {
+  margin-bottom: 10px;
+}
+
+.feedback-note {
+  font-size: 0.9rem;
+  color: #4b5563;
+}

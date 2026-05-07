@@ -1,4 +1,4 @@
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 
 from .config import settings
@@ -42,6 +42,30 @@ RATE_LIMIT_REJECTIONS = Counter(
     "story_insights_rate_limit_rejections_total", "Rate limit rejections", ["policy"]
 )
 AUTH_FAILURES = Counter("story_insights_auth_failures_total", "Auth failures", ["reason"])
+FEEDBACK_EVENTS = Counter(
+    "story_insights_feedback_events_total",
+    "Feedback events submitted",
+    ["channel", "feedback_type", "category", "status"],
+)
+FEEDBACK_FLAGGED = Counter(
+    "story_insights_feedback_flagged_total",
+    "Feedback comments flagged",
+    ["reason"],
+)
+FEEDBACK_REVIEW_LATENCY = Histogram(
+    "story_insights_feedback_review_latency_seconds",
+    "Time from feedback creation to review",
+    buckets=(60, 300, 900, 3600, 21600, 86400, 604800),
+)
+FEEDBACK_ADMIN_QUEUE_SIZE = Gauge(
+    "story_insights_feedback_admin_queue_size",
+    "Number of feedback items awaiting review",
+)
+FEEDBACK_OPT_IN = Counter(
+    "story_insights_feedback_opt_in_total",
+    "Feedback comment consent opt-ins",
+    ["channel"],
+)
 
 
 def _route_label(route: str) -> str:
@@ -118,3 +142,33 @@ def record_auth_failure(reason):
 
 def metrics_response():
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def record_feedback_event(channel, feedback_type, category, status):
+    if ENABLED:
+        FEEDBACK_EVENTS.labels(
+            channel=channel or "unknown",
+            feedback_type=feedback_type or "unknown",
+            category=category or "unknown",
+            status=status or "unknown",
+        ).inc()
+
+
+def record_feedback_flagged(reason):
+    if ENABLED:
+        FEEDBACK_FLAGGED.labels(reason=reason or "unknown").inc()
+
+
+def record_feedback_review_latency(seconds):
+    if ENABLED:
+        FEEDBACK_REVIEW_LATENCY.observe(max(0.0, float(seconds or 0.0)))
+
+
+def set_feedback_admin_queue_size(size):
+    if ENABLED:
+        FEEDBACK_ADMIN_QUEUE_SIZE.set(max(0, int(size or 0)))
+
+
+def record_feedback_opt_in(channel):
+    if ENABLED:
+        FEEDBACK_OPT_IN.labels(channel=channel or "unknown").inc()

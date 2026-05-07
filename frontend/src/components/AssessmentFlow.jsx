@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { SessionContext } from "../App";
 import { getNextScene } from "../api";
 import SceneLoading from "./SceneLoading";
+import MicroFeedbackPrompt from "./MicroFeedbackPrompt";
 import SceneRenderer from "./SceneRenderer";
 import TimerBar from "./TimerBar";
 
@@ -174,6 +175,7 @@ export default function AssessmentFlow() {
           {import.meta.env.DEV && Array.isArray(scene?.scene_metadata?.context_fragment_ids) && (
             <p className="muted small">Context: {scene.scene_metadata.context_fragment_ids.length} anchors</p>
           )}
+          <MicroFeedbackPrompt sessionId={session.id} sceneId={scene.id} turn={scene.turn} />
           <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
           <SceneRenderer
             scene={scene}

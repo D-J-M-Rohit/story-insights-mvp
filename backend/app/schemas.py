@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SessionCreate(BaseModel):
@@ -242,3 +242,68 @@ class MetricsSummaryOut(BaseModel):
     request_counts: Optional[dict] = None
     fallback_counts: Optional[dict] = None
     latency_summary: Optional[dict] = None
+
+
+class FeedbackCreate(BaseModel):
+    session_id: str
+    scene_id: Optional[str] = None
+    report_id: Optional[str] = None
+    turn: Optional[int] = None
+    feedback_type: str
+    channel: str
+    category: Optional[str] = None
+    rating_useful: Optional[int] = None
+    rating_engaging: Optional[int] = None
+    tags: List[str] = Field(default_factory=list)
+    comment: Optional[str] = None
+    consent_comment: bool = False
+
+    @model_validator(mode="after")
+    def validate_feedback(self):
+        for v in (self.rating_useful, self.rating_engaging):
+            if v is not None and (v < 1 or v > 5):
+                raise ValueError("ratings_must_be_1_to_5")
+        if self.comment and len(self.comment) > 300:
+            raise ValueError("comment_too_long")
+        if self.feedback_type == "micro" and self.comment:
+            raise ValueError("micro_feedback_no_comment")
+        if self.feedback_type == "session" and not self.tags and self.rating_useful is None and self.rating_engaging is None and not (
+            self.comment and self.consent_comment
+        ):
+            raise ValueError("post_report_feedback_empty")
+        return self
+
+
+class FeedbackOut(BaseModel):
+    id: str
+    session_id: str
+    scene_id: Optional[str] = None
+    report_id: Optional[str] = None
+    turn: Optional[int] = None
+    feedback_type: str
+    channel: str
+    category: Optional[str] = None
+    rating_useful: Optional[int] = None
+    rating_engaging: Optional[int] = None
+    tags: List[str] = Field(default_factory=list)
+    comment_redacted: Optional[str] = None
+    consent_comment: bool = False
+    moderation_status: str
+    moderation_flags: List[str] = Field(default_factory=list)
+    created_at: Optional[str] = None
+    raw_retention_until: Optional[str] = None
+
+
+class FeedbackReview(BaseModel):
+    moderation_status: str
+    reviewer_note: Optional[str] = None
+
+
+class FeedbackSummaryOut(BaseModel):
+    session_id: str
+    submitted_count: int
+    avg_useful: Optional[float] = None
+    avg_engaging: Optional[float] = None
+    tags: dict
+    flagged_count: int
+    latest_created_at: Optional[str] = None

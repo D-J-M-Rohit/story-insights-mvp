@@ -214,3 +214,73 @@ Future production direction:
 - Propagate correlation IDs through API gateway/load balancer.
 - Add full OpenTelemetry collector later.
 - Keep raw prompt/response details only in restricted trace stores when needed, not general logs.
+
+## Feedback Service
+
+- Feedback is optional and privacy-first.
+- Feedback improves UX, story pacing, and clarity tuning, but does not affect scores.
+- Feedback does not affect deterministic scoring, derived features, evidence cards, or confidence bands.
+- Micro-feedback can produce short-lived presentation hints (pace/clarity/tone/variety) only.
+- Feedback hints never change target construct, difficulty progression, construct coverage, or validation thresholds.
+- Raw comments are retained for 90 days by default, then purged via admin endpoint.
+- Aggregate feedback rollups may be retained for 365 days.
+- Raw feedback comments are not logged in structured logs.
+- Micro-feedback appears at most once per session (frontend local session marker).
+
+Endpoints:
+- `POST /api/v1/feedback`
+- `GET /api/v1/feedback/my?session_id=...`
+- `GET /api/v1/feedback/summary?session_id=...`
+- `GET /api/v1/admin/feedback?status=flagged`
+- `PATCH /api/v1/admin/feedback/{feedback_id}`
+- `POST /api/v1/admin/feedback/rollup`
+- `POST /api/v1/admin/feedback/purge-old`
+
+Submit post-report feedback:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/feedback" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id":"<session_id>",
+    "report_id":"<session_id>",
+    "feedback_type":"session",
+    "channel":"post_report",
+    "category":"story_report_experience",
+    "rating_useful":4,
+    "rating_engaging":4,
+    "tags":["helpful","clear"],
+    "comment":"The report was clear and practical.",
+    "consent_comment":true
+  }'
+```
+
+Submit in-session micro feedback:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/feedback" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id":"<session_id>",
+    "scene_id":"<scene_id>",
+    "turn":2,
+    "feedback_type":"micro",
+    "channel":"in_session",
+    "category":"pacing_clarity",
+    "tags":["too_fast","confusing"]
+  }'
+```
+
+Admin review flagged feedback:
+
+```bash
+curl "http://localhost:8000/api/v1/admin/feedback?status=flagged" \
+  -H "Authorization: Bearer <admin_token>"
+
+curl -X PATCH "http://localhost:8000/api/v1/admin/feedback/<feedback_id>" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"moderation_status":"resolved","reviewer_note":"triaged"}'
+```

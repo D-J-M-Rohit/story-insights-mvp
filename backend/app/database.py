@@ -61,3 +61,9 @@ def _ensure_columns():
         conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS components_json JSON")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_derived_features_session_id_feature_key ON derived_features (session_id, feature_key)")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_derived_features_created_at ON derived_features (created_at)")
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_feedback_events_moderation_status_created_at ON feedback_events (moderation_status, created_at)"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_feedback_daily_metrics_day_scenario_pack_id ON feedback_daily_metrics (day, scenario_pack_id)"
+        )
