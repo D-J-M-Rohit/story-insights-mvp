@@ -14,13 +14,16 @@ from .pdf_report import build_report_pdf
 from .policy_trace import build_output_hash, build_policy_trace
 from .prompt_policy import POLICY_VERSION, build_policy_input, decide_policy
 from .prompts import build_scene_prompt
+from .rate_limit import RateLimitMiddleware
 from .report_interpreter import generate_interpretation
 from .scenario_packs import get_default_pack_for_scenario, seed_builtin_packs, validate_pack
 from .scoring import score_session
 from .scene_validation import validate_scene_against_policy
 from .telemetry import normalize_telemetry
 from .schemas import (
+    ConfidenceOut,
     ContextPreviewRequest,
+    DerivedFeatureOut,
     GenerationTraceOut,
     NextSceneRequest,
     PolicyDecisionOut,
@@ -39,6 +42,7 @@ from .store import (
     delete_derived_features,
     get_generation_trace_for_scene,
     list_generation_traces,
+    list_derived_features,
     save_derived_features,
     save_generation_trace,
     update_generation_trace,
@@ -80,6 +84,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 
 @app.on_event("startup")
@@ -482,9 +487,10 @@ def report(session_id: str, current_user=Depends(get_current_user)):
         choices = list_choices(session_id)
         report_data = score_session(session, choices)
     choices = list_choices(session_id)
-    report_data = attach_evidence_to_report(report_data, choices)
+    report_data = attach_evidence_to_report(report_data, choices, session=session)
     delete_derived_features(session_id)
-    save_derived_features(session_id, build_derived_features(session, report_data, choices))
+    derived = save_derived_features(session_id, build_derived_features(session, report_data, choices))
+    report_data["derived_features"] = derived
     report_data["scenario"] = report_data.get("scenario") or session.get("scenario")
     report_data["interpretation"] = report_data.get("interpretation") or generate_interpretation(
         report_data, report_data.get("scenario", "general")
@@ -524,9 +530,52 @@ def report_evidence(session_id: str, current_user=Depends(get_current_user)):
         choices = list_choices(session_id)
         report_data = score_session(session, choices)
     if "evidence_cards" not in report_data:
-        report_data = attach_evidence_to_report(report_data, list_choices(session_id))
+        report_data = attach_evidence_to_report(report_data, list_choices(session_id), session=session)
         save_report(session_id, report_data)
     return {"session_id": session_id, "evidence_cards": report_data.get("evidence_cards", [])}
+
+
+@app.get("/api/v1/reports/{session_id}/derived-features")
+def report_derived_features(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    return {"session_id": session_id, "derived_features": list_derived_features(session_id)}
+
+
+@app.get("/api/v1/reports/{session_id}/confidence")
+def report_confidence(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    derived = list_derived_features(session_id)
+    if not derived:
+        report_data = get_report(session_id) or score_session(session, list_choices(session_id))
+        report_data = attach_evidence_to_report(report_data, list_choices(session_id), session=session)
+        derived = save_derived_features(session_id, build_derived_features(session, report_data, list_choices(session_id)))
+    levels = [d.get("confidence_level", "exploratory") for d in derived]
+    overall = "directional" if "directional" in levels else ("exploratory" if "exploratory" in levels else "insufficient_evidence")
+    features = [
+        {
+            "key": d.get("feature_key"),
+            "score": d.get("feature_score"),
+            "low": d.get("confidence_low"),
+            "high": d.get("confidence_high"),
+            "level": d.get("confidence_level"),
+            "evidence_count": d.get("evidence_count"),
+        }
+        for d in derived
+    ]
+    return {
+        "session_id": session_id,
+        "confidence_summary": {
+            "overall_level": overall,
+            "completed_turns": len(list_choices(session_id)),
+            "expected_turns": int(session.get("max_turns") or 0),
+            "message": "Scores are directional estimates from a short interactive session.",
+        },
+        "features": features,
+    }
 
 
 @app.get("/api/v1/debug/sessions/{session_id}/traces", response_model=list[GenerationTraceOut])

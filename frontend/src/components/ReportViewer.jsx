@@ -73,6 +73,9 @@ export default function ReportViewer() {
         <p className="muted">
           Experimental reflection only. This is not a clinical, diagnostic, or hiring assessment.
         </p>
+        <p className="confidence-note">
+          Scores are experimental and based on a short interactive session. Ranges show estimated uncertainty from evidence count and telemetry completeness.
+        </p>
         <p>{report.summary}</p>
       </div>
       <div className="card">
@@ -156,6 +159,17 @@ export default function ReportViewer() {
           <div key={f.key} className="card">
             <h4>{f.name}</h4>
             <strong>{f.score}</strong>
+            {f.label && <p className="muted small">Label: {f.label}</p>}
+            {f.confidence && (
+              <>
+                <p className="confidence-range">
+                  Estimated range: {Math.round(f.confidence.low)}-{Math.round(f.confidence.high)}
+                </p>
+                <p className="muted small">
+                  Confidence: <span className="confidence-pill">{f.confidence.level}</span> · Evidence: {f.confidence.evidence_count} decisions
+                </p>
+              </>
+            )}
             {f.raw_score != null && (
               <p className="muted small">
                 Raw: {f.raw_score} · Evidence: {f.evidence_count} · {f.interpretation_status}

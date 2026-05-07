@@ -101,6 +101,9 @@ class FeatureOut(BaseModel):
     confidence_low: Optional[float] = None
     confidence_high: Optional[float] = None
     interpretation_status: Optional[str] = None
+    bucket: Optional[str] = None
+    label: Optional[str] = None
+    confidence: Optional[dict] = None
 
 
 class PenOut(BaseModel):
@@ -118,6 +121,7 @@ class ReportOut(BaseModel):
     choices: List[dict]
     interpretation: Optional[dict] = None
     evidence_cards: Optional[List[dict]] = None
+    derived_features: Optional[List[dict]] = None
 
 
 class EvidenceCardOut(BaseModel):
@@ -148,6 +152,34 @@ class GenerationTraceOut(BaseModel):
     response_hash: Optional[str] = None
     fallback_reason: Optional[str] = None
     created_at: Optional[str] = None
+
+
+class ConfidenceOut(BaseModel):
+    level: str
+    low: float
+    high: float
+    margin: float
+    method: str
+    evidence_count: int
+    note: str
+
+
+class DerivedFeatureOut(BaseModel):
+    feature_key: str
+    feature_name: str
+    feature_score: float
+    feature_bucket: str
+    feature_label: Optional[str] = None
+    evidence_count: int
+    confidence_level: str
+    confidence_low: float
+    confidence_high: float
+    confidence_margin: float
+    confidence_method: str
+    evidence_json: dict
+    components_json: Optional[dict] = None
+    source_choice_ids: Optional[List[str]] = None
+    scorer_version: str
 
 
 class PolicyDecisionOut(BaseModel):

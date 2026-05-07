@@ -1,4 +1,5 @@
 from .telemetry import telemetry_summary_for_evidence
+from .confidence import attach_confidence_to_feature
 
 
 DISCLAIMER = "Experimental reflection only; not a clinical, diagnostic, or hiring assessment."
@@ -133,6 +134,9 @@ def build_evidence_cards(report: dict, choices: list[dict]) -> list[dict]:
 def build_derived_features(session: dict, report: dict, choices: list[dict]) -> list[dict]:
     out = []
     for card in build_evidence_cards(report, choices):
+        feature = next((f for f in report.get("features", []) if f.get("key") == card["feature_key"]), {"key": card["feature_key"], "score": card["score"]})
+        with_conf = attach_confidence_to_feature(feature, choices, session)
+        conf = with_conf.get("confidence", {})
         out.append(
             {
                 "session_id": session.get("id"),
@@ -142,7 +146,14 @@ def build_derived_features(session: dict, report: dict, choices: list[dict]) -> 
                 "feature_score": card["score"],
                 "feature_bucket": card["bucket"],
                 "feature_label": card["label"],
+                "evidence_count": int(conf.get("evidence_count", len(choices or []))),
+                "confidence_level": conf.get("level", "exploratory"),
+                "confidence_low": float(conf.get("low", 0.0)),
+                "confidence_high": float(conf.get("high", 100.0)),
+                "confidence_margin": float(conf.get("margin", 30.0)),
+                "confidence_method": conf.get("method", "mvp_evidence_weighted_v1"),
                 "evidence_json": {"evidence": card["evidence"], "components": card["components"], "disclaimer": card["disclaimer"]},
+                "components_json": card["components"],
                 "source_choice_ids": card.get("source_choice_ids", []),
                 "scorer_version": "scoring_v1",
             }
@@ -150,7 +161,7 @@ def build_derived_features(session: dict, report: dict, choices: list[dict]) -> 
     return out
 
 
-def attach_evidence_to_report(report: dict, choices: list[dict]) -> dict:
+def attach_evidence_to_report(report: dict, choices: list[dict], session: dict | None = None) -> dict:
     report = dict(report)
     cards = build_evidence_cards(report, choices)
     report["evidence_cards"] = cards
@@ -160,4 +171,9 @@ def attach_evidence_to_report(report: dict, choices: list[dict]) -> dict:
         if card:
             f["bucket"] = card["bucket"]
             f["label"] = card["label"]
+        conf = attach_confidence_to_feature(f, choices, session or {"max_turns": max(1, len(choices or []))}).get("confidence", {})
+        f["confidence"] = conf
+        f["confidence_low"] = conf.get("low")
+        f["confidence_high"] = conf.get("high")
+        f["evidence_count"] = conf.get("evidence_count", f.get("evidence_count", 0))
     return report

@@ -144,6 +144,8 @@ export default function AssessmentFlow() {
     } catch (e) {
       if (e.status === 410 || e.message === "assessment_complete") {
         navigate(`/report/${session.id}`);
+      } else if (e.status === 429 || e.message === "rate_limit_exceeded") {
+        setError("Too many requests. Please try again in a moment.");
       } else {
         setError(e.message);
       }
@@ -168,6 +170,7 @@ export default function AssessmentFlow() {
               Target: {scene.scene_metadata.target_construct} · Difficulty: {scene.scene_metadata.difficulty}
             </p>
           )}
+          {import.meta.env.DEV && <p className="muted small">Telemetry active</p>}
           {import.meta.env.DEV && Array.isArray(scene?.scene_metadata?.context_fragment_ids) && (
             <p className="muted small">Context: {scene.scene_metadata.context_fragment_ids.length} anchors</p>
           )}

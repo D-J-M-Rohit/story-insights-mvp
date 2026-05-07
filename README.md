@@ -156,3 +156,19 @@ Endpoints:
 Privacy notes:
 - No passwords/tokens/API keys/raw emails are stored in traces.
 - Raw telemetry is bounded and summarized.
+
+## Derived Features, Confidence Bands, and Rate Limiting
+
+- `DerivedFeatures` exists because storing metrics only in `report_json` limits auditability. Per-metric rows preserve score, evidence, confidence metadata, and scorer version for reconstruction.
+- Confidence bands are exploratory MVP estimates for short sessions (often around 5 turns). UI language uses estimated range / directional confidence, not validated clinical intervals.
+- Rate limiting is applied to expensive routes:
+  - `/api/v1/scenes/next`: 10 requests/sec, burst 20
+  - `/api/v1/reports/*`: 3 requests/sec, burst 6
+  - `/api/v1/auth/login`: 5 requests/minute, burst 5
+  - default `/api/v1/*`: 30 requests/sec, burst 60
+  - `/health` is exempt
+- The current limiter uses in-memory token buckets, suitable for local/demo/single-instance use. Multi-instance production should move the same policies to Redis or API Gateway/Envoy.
+
+Additional endpoints:
+- `GET /api/v1/reports/{session_id}/derived-features`
+- `GET /api/v1/reports/{session_id}/confidence`

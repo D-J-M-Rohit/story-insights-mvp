@@ -224,3 +224,31 @@ button:disabled {
   color: #312e81;
   font-size: 0.8rem;
 }
+
+.confidence-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.confidence-range {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+  color: #111827;
+}
+
+.confidence-note {
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.derived-feature-card {
+  border: 1px solid #e5e7eb;
+}
+
+.evidence-count {
+  font-size: 0.85rem;
+  color: #6b7280;
+}

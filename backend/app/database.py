@@ -52,3 +52,12 @@ def _ensure_columns():
     with engine.begin() as conn:
         conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scenario_pack_id VARCHAR")
         conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS policy_version VARCHAR")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS evidence_count INTEGER DEFAULT 0")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_level VARCHAR DEFAULT 'exploratory'")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_low DOUBLE PRECISION DEFAULT 0")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_high DOUBLE PRECISION DEFAULT 0")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_margin DOUBLE PRECISION DEFAULT 0")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_method VARCHAR DEFAULT 'mvp_evidence_weighted_v1'")
+        conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS components_json JSON")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_derived_features_session_id_feature_key ON derived_features (session_id, feature_key)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_derived_features_created_at ON derived_features (created_at)")

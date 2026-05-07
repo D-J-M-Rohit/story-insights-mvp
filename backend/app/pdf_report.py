@@ -50,6 +50,15 @@ def build_report_pdf(report: dict) -> BytesIO:
         line(f"{metric_name[:36]}", size=10, gap=14)
         pdf.drawString(x2, y + 14, str(feature.get("score", "-")))
         pdf.drawString(x3, y + 14, labels.get(feature.get("key"), "-")[:38])
+        conf = feature.get("confidence") or {}
+        if conf:
+            line(
+                f"Estimated range: {conf.get('low', '-')} - {conf.get('high', '-')} | "
+                f"Confidence: {str(conf.get('level', 'exploratory')).title()} | "
+                f"Evidence: {conf.get('evidence_count', 0)} decisions",
+                size=9,
+                gap=12,
+            )
 
     cards = report.get("evidence_cards") or []
     if cards:
@@ -59,6 +68,11 @@ def build_report_pdf(report: dict) -> BytesIO:
             for bullet in (card.get("evidence") or [])[:2]:
                 line(f"- {bullet[:100]}", size=9, gap=12)
 
+    line(
+        "Confidence bands are exploratory MVP estimates based on evidence count and telemetry completeness. "
+        "They are not validated clinical or hiring intervals.",
+        size=9,
+    )
     line(
         "Technical note: Scores are experimental and based on a short interactive session. "
         "They should not be treated as clinical, diagnostic, or hiring assessments.",
