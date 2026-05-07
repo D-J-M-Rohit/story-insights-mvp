@@ -32,6 +32,7 @@ export default function ReportViewer() {
     score: p.score,
   }));
   const interpretation = report.interpretation || {};
+  const durationSec = report.duration_ms != null ? (Number(report.duration_ms) / 1000).toFixed(1) : null;
   const coverage = (report.choices || []).reduce((acc, choice) => {
     const target = choice?.scene_metadata?.target_construct;
     if (target) acc[target] = (acc[target] || 0) + 1;
@@ -71,6 +72,9 @@ export default function ReportViewer() {
       <div className="card">
         <h2>Behavioral Insight Report</h2>
         <p className="muted">{report.scenario}</p>
+        <p className="muted small">Started: {report.started_at || "-"}</p>
+        <p className="muted small">Completed: {report.completed_at || "-"}</p>
+        <p className="muted small">Duration: {durationSec != null ? `${durationSec} sec` : "-"}</p>
         <p className="muted">
           Experimental reflection only. This is not a clinical, diagnostic, or hiring assessment.
         </p>
@@ -140,6 +144,29 @@ export default function ReportViewer() {
               )}
             </details>
           ))}
+        </div>
+      )}
+
+      {(report.benchmark_comparisons || []).length > 0 && (
+        <div className="card">
+          <h3>Your Score vs MVP Baseline</h3>
+          <p className="muted small">
+            Internal MVP reference band only. Not a clinical, population, or hiring benchmark.
+          </p>
+          <div className="benchmark-list">
+            {report.benchmark_comparisons.map((item) => (
+              <div key={item.feature_key} className="benchmark-item">
+                <div>
+                  <p className="benchmark-title">{item.metric_name}</p>
+                  <p className="muted small">Reference band: {item.low_threshold}-{item.high_threshold}</p>
+                </div>
+                <div className="benchmark-right">
+                  <strong>{Math.round(item.score)}</strong>
+                  <span className="benchmark-band">{item.band}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

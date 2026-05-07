@@ -66,6 +66,40 @@ FEEDBACK_OPT_IN = Counter(
     "Feedback comment consent opt-ins",
     ["channel"],
 )
+RETRIEVAL_LATENCY_SECONDS = Histogram(
+    "story_insights_retrieval_latency_seconds",
+    "Retrieval latency",
+    ["backend", "scenario_pack"],
+    buckets=(0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0),
+)
+EMBEDDING_THROUGHPUT = Gauge(
+    "story_insights_embedding_throughput",
+    "Embeddings generated per second",
+    ["model", "device"],
+)
+FAISS_SEARCH_LATENCY_SECONDS = Histogram(
+    "story_insights_faiss_search_latency_seconds",
+    "FAISS search latency",
+    ["index_name", "k"],
+    buckets=(0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25),
+)
+RETRIEVAL_FALLBACKS = Counter(
+    "story_insights_retrieval_fallback_total",
+    "Retrieval returned no augmenting context (disabled, error, or empty)",
+    ["backend", "reason"],
+)
+OBJECT_STORE_PUT_SECONDS = Histogram(
+    "story_insights_object_store_put_seconds",
+    "Object storage PUT latency",
+    ["backend", "blob_type"],
+    buckets=(0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+)
+ARCHIVE_SIZE_BYTES = Histogram(
+    "story_insights_archive_size_bytes",
+    "Archived blob sizes",
+    ["backend", "blob_type"],
+    buckets=(1024, 10240, 102400, 1048576, 10485760, 104857600),
+)
 
 
 def _route_label(route: str) -> str:
@@ -172,3 +206,44 @@ def set_feedback_admin_queue_size(size):
 def record_feedback_opt_in(channel):
     if ENABLED:
         FEEDBACK_OPT_IN.labels(channel=channel or "unknown").inc()
+
+
+def record_retrieval_latency(backend, scenario_pack, duration_seconds):
+    if ENABLED:
+        RETRIEVAL_LATENCY_SECONDS.labels(backend=backend or "unknown", scenario_pack=scenario_pack or "any").observe(
+            max(0.0, float(duration_seconds or 0.0))
+        )
+
+
+def record_embedding_throughput(model, device, vectors_per_sec):
+    if ENABLED:
+        EMBEDDING_THROUGHPUT.labels(model=model or "unknown", device=device or "cpu").set(max(0.0, float(vectors_per_sec or 0.0)))
+
+
+def record_faiss_search_latency(index_name, k, duration_seconds):
+    if ENABLED:
+        FAISS_SEARCH_LATENCY_SECONDS.labels(index_name=index_name or "default", k=str(int(k or 0))).observe(
+            max(0.0, float(duration_seconds or 0.0))
+        )
+
+
+def record_retrieval_fallback(backend: str, reason: str):
+    if ENABLED:
+        RETRIEVAL_FALLBACKS.labels(
+            backend=(backend or "none").lower()[:64],
+            reason=(reason or "unknown").lower().replace(" ", "_")[:64],
+        ).inc()
+
+
+def record_object_store_put(backend, blob_type, duration_seconds):
+    if ENABLED:
+        OBJECT_STORE_PUT_SECONDS.labels(backend=backend or "filesystem", blob_type=blob_type or "unknown").observe(
+            max(0.0, float(duration_seconds or 0.0))
+        )
+
+
+def record_archive_size(backend, blob_type, size_bytes):
+    if ENABLED:
+        ARCHIVE_SIZE_BYTES.labels(backend=backend or "filesystem", blob_type=blob_type or "unknown").observe(
+            max(0.0, float(size_bytes or 0.0))
+        )

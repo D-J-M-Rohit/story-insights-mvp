@@ -7,7 +7,7 @@ import MicroFeedbackPrompt from "./MicroFeedbackPrompt";
 import SceneRenderer from "./SceneRenderer";
 import TimerBar from "./TimerBar";
 
-export default function AssessmentFlow() {
+export default function AssessmentFlow({ initialScene = null }) {
   const { session } = useContext(SessionContext);
   const [scene, setScene] = useState(null);
   const [selected, setSelected] = useState("");
@@ -66,15 +66,28 @@ export default function AssessmentFlow() {
       setScene(first);
       resetTelemetry();
     } catch (e) {
+      if (e.status === 410 || String(e.message || "").includes("assessment_complete")) {
+        navigate(`/report/${session.id}`);
+        return;
+      }
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [session, resetTelemetry]);
+  }, [session, resetTelemetry, navigate]);
 
   useEffect(() => {
+    if (!session?.id) return;
+    if (initialScene && initialScene.id) {
+      setScene(initialScene);
+      setLoading(false);
+      setError("");
+      resetTelemetry();
+      return;
+    }
+    setLoading(true);
     loadFirst();
-  }, [loadFirst]);
+  }, [session?.id, initialScene?.id, loadFirst, initialScene, resetTelemetry]);
 
   function onHover(optionId) {
     const t = Math.round(performance.now() - startRef.current);

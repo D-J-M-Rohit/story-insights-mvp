@@ -1,15 +1,19 @@
 from time import perf_counter
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .auth import create_access_token, get_current_user, hash_password, password_too_long, verify_password
 from .config import settings
 from .context_builder import build_context_bundle
+from .embeddings import seed_embeddings
 from .evidence_mapper import attach_evidence_to_report, build_derived_features
 from .feedback import build_feedback_event, normalize_feedback_payload, sanitize_feedback_event
 from .generation_trace import build_generation_trace_start, finalize_generation_trace
+from .archive_service import archive_faiss_snapshot, archive_generation_trace, archive_pdf_bytes, archive_prompt_payload, purge_expired_archives
+from .benchmark_baselines import attach_benchmark_comparisons
+from .circuit_breaker import get_provider_circuit_breaker
 from .llm_gateway import LLMGateway
 from .logging_config import configure_logging, hash_identifier, log_event
 from .metrics import (
@@ -33,8 +37,12 @@ from .report_interpreter import generate_interpretation
 from .scenario_packs import get_default_pack_for_scenario, seed_builtin_packs, validate_pack
 from .scoring import score_session
 from .scene_validation import validate_scene_against_policy
+from .security_headers import apply_security_headers
 from .telemetry import normalize_telemetry
+from .retrieval import build_faiss_index, get_active_faiss_index, retrieve_context
+from .object_store import get_signed_download_url
 from .schemas import (
+    AuthOut,
     ConfidenceOut,
     ContextPreviewRequest,
     FeedbackCreate,
@@ -51,9 +59,11 @@ from .schemas import (
     ReportOut,
     ScenarioPackOut,
     SceneOut,
+    SceneOption,
     SessionCreate,
+    SessionDetailOut,
     SessionOut,
-    TokenOut,
+    SessionStateOut,
     UserLogin,
     UserOut,
     UserRegister,
@@ -92,6 +102,10 @@ from .store import (
     list_scenes,
     save_choice,
     create_feedback_event,
+    feedback_idempotency_get,
+    feedback_idempotency_set,
+    get_existing_micro_feedback,
+    get_resume_scene_for_session,
     save_context_trace,
     save_policy_trace,
     save_report,
@@ -102,11 +116,19 @@ from .store import (
     purge_old_feedback_comments,
     review_feedback_event,
     rollup_feedback_daily_metrics,
+    create_archived_blob,
+    create_faiss_index_metadata,
+    get_archived_blob,
+    list_fragment_embeddings_for_index,
+    list_archived_blobs_for_report,
+    mark_archived_blob_deleted,
+    set_active_faiss_index,
 )
 
 app = FastAPI(title="Story Insights MVP")
 gateway = LLMGateway()
 configure_logging()
+circuit_breaker = get_provider_circuit_breaker(settings)
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,6 +138,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RateLimitMiddleware)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request, call_next):
+    response = await call_next(request)
+    apply_security_headers(response, settings)
+    return response
 
 
 @app.middleware("http")
@@ -180,7 +209,14 @@ def provider_metrics_summary(current_user=Depends(get_current_user)):
         },
         "fallback_counts": snap.get("recent_fallback_reasons", {}),
         "latency_summary": snap.get("latency_ms", {}),
+        "circuit_breaker": circuit_breaker.get_all_snapshots(),
     }
+
+
+@app.get("/api/v1/provider/circuit-status")
+def provider_circuit_status(current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    return {"enabled": bool(settings.PROVIDER_CIRCUIT_BREAKER_ENABLED), "circuits": circuit_breaker.get_all_snapshots()}
 
 
 def _require_admin(current_user):
@@ -188,8 +224,95 @@ def _require_admin(current_user):
         raise HTTPException(status_code=403, detail="admin_required")
 
 
-@app.post("/api/v1/auth/register", response_model=TokenOut)
-def register(payload: UserRegister):
+def _set_auth_cookie(response: Response, token: str):
+    if not settings.AUTH_COOKIE_ENABLED:
+        return
+    response.set_cookie(
+        key=settings.AUTH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=bool(settings.AUTH_COOKIE_SECURE),
+        samesite=settings.AUTH_COOKIE_SAMESITE,
+        max_age=int(settings.AUTH_COOKIE_MAX_AGE_MINUTES) * 60,
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response):
+    response.delete_cookie(
+        key=settings.AUTH_COOKIE_NAME,
+        path="/",
+        secure=bool(settings.AUTH_COOKIE_SECURE),
+        samesite=settings.AUTH_COOKIE_SAMESITE,
+    )
+
+
+def _include_bearer_token_in_body(request: Request) -> bool:
+    if not settings.AUTH_COOKIE_ENABLED:
+        return True
+    if settings.AUTH_RETURN_TOKEN_IN_BODY:
+        return True
+    if settings.AUTH_ALLOW_TOKEN_RESPONSE_OVERRIDE:
+        if (request.headers.get("X-Return-Bearer-Token") or "").lower() in ("true", "1", "yes"):
+            return True
+        if (request.query_params.get("include_token") or "").lower() in ("true", "1", "yes"):
+            return True
+    return False
+
+
+def _auth_response(user_row: dict, token: str, request: Request) -> dict:
+    user_out = {"id": user_row["id"], "email": user_row["email"], "role": user_row["role"]}
+    if _include_bearer_token_in_body(request):
+        return {"access_token": token, "token_type": "bearer", "user": user_out}
+    return {"token_type": "cookie", "user": user_out}
+
+
+def _session_detail_out(session: dict) -> SessionDetailOut:
+    return SessionDetailOut(
+        id=session["id"],
+        user_id=session["user_id"],
+        scenario=session["scenario"],
+        max_turns=session["max_turns"],
+        current_turn=int(session.get("current_turn") or 0),
+        status=session["status"],
+        created_at=str(session["created_at"]) if session.get("created_at") else None,
+        completed_at=str(session["completed_at"]) if session.get("completed_at") else None,
+        duration_ms=session.get("duration_ms"),
+        scenario_pack_id=session.get("scenario_pack_id"),
+        policy_version=session.get("policy_version"),
+    )
+
+
+def _scene_row_to_scene_out(scene: dict) -> SceneOut:
+    opts: list[SceneOption] = []
+    for o in scene.get("options") or []:
+        opts.append(
+            SceneOption(
+                id=o["id"],
+                text=o["text"],
+                traits=o.get("traits") or {},
+                construct_tags=o.get("construct_tags") or [],
+                quality=o.get("quality"),
+                quality_dimensions=o.get("quality_dimensions"),
+            )
+        )
+    meta = scene.get("scene_metadata") or {}
+    return SceneOut(
+        id=scene["id"],
+        turn=scene["turn"],
+        title=scene["title"],
+        scene=scene["scene"],
+        time_limit_sec=scene.get("time_limit_sec", 45),
+        options=opts,
+        scene_metadata=scene.get("scene_metadata"),
+        scenario_pack_id=meta.get("scenario_pack_id"),
+        prompt_version=meta.get("prompt_version"),
+        policy_version=meta.get("policy_version"),
+    )
+
+
+@app.post("/api/v1/auth/register", response_model=AuthOut)
+def register(payload: UserRegister, response: Response, request: Request):
     if len(payload.password or "") < 8:
         raise HTTPException(status_code=400, detail="password_too_short")
     if password_too_long(payload.password):
@@ -204,18 +327,28 @@ def register(payload: UserRegister):
         raise HTTPException(status_code=500, detail="password_hash_failed") from exc
     user = create_user(payload.email.strip().lower(), pw_hash)
     token = create_access_token(user)
-    return {"access_token": token, "token_type": "bearer", "user": {"id": user["id"], "email": user["email"], "role": user["role"]}}
+    _set_auth_cookie(response, token)
+    lean = {k: v for k, v in user.items() if k != "password_hash"}
+    return _auth_response(lean, token, request)
 
 
-@app.post("/api/v1/auth/login", response_model=TokenOut)
-def login(payload: UserLogin):
+@app.post("/api/v1/auth/login", response_model=AuthOut)
+def login(payload: UserLogin, response: Response, request: Request):
     user = get_user_by_email(payload.email.strip().lower())
     if not user or not verify_password(payload.password, user["password_hash"]):
         record_auth_failure("invalid_credentials")
         raise HTTPException(status_code=401, detail="invalid_credentials")
     set_request_context(user_hash=hash_identifier(user["id"]))
     token = create_access_token(user)
-    return {"access_token": token, "token_type": "bearer", "user": {"id": user["id"], "email": user["email"], "role": user["role"]}}
+    _set_auth_cookie(response, token)
+    lean = {k: v for k, v in user.items() if k != "password_hash"}
+    return _auth_response(lean, token, request)
+
+
+@app.post("/api/v1/auth/logout")
+def logout(response: Response):
+    _clear_auth_cookie(response)
+    return {"ok": True}
 
 
 @app.get("/api/v1/me", response_model=UserOut)
@@ -264,6 +397,33 @@ def my_sessions(current_user=Depends(get_current_user)):
         }
         for row in rows
     ]
+
+
+@app.get("/api/v1/sessions/{session_id}", response_model=SessionDetailOut)
+def session_detail(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    return _session_detail_out(session)
+
+
+@app.get("/api/v1/sessions/{session_id}/state", response_model=SessionStateOut)
+def session_state(session_id: str, current_user=Depends(get_current_user)):
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    choices = list_choices(session_id)
+    resume_scene = get_resume_scene_for_session(session_id)
+    latest = _scene_row_to_scene_out(resume_scene) if resume_scene else None
+    completed = session.get("status") != "active"
+    report_ready = completed and bool(get_report(session_id))
+    return SessionStateOut(
+        session=_session_detail_out(session),
+        latest_scene=latest,
+        choices_count=len(choices),
+        can_resume=session.get("status") == "active",
+        report_ready=report_ready,
+    )
 
 
 @app.post("/api/v1/scenes/next", response_model=SceneOut)
@@ -436,6 +596,28 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         error_type=finalized_gen.get("error_type"),
         trace_json_patch=finalized_gen.get("trace_json"),
     )
+    if settings.OBJECT_ARCHIVE_ENABLED:
+        archive_generation_trace(finalized_gen)
+        archive_prompt_payload(
+            {
+                "session_id": session["id"],
+                "generation_trace_id": finalized_gen.get("id"),
+                "prompt_hash": trace_row.get("prompt_hash"),
+                "policy_version": policy.get("policy_version"),
+                "prompt_version": policy.get("prompt_version"),
+            }
+        )
+    debug_payload = None
+    if settings.BENCHMARK_DEBUG_FIELDS_ENABLED:
+        q = (context_trace or {}).get("query_json") or {}
+        debug_payload = {
+            "retrieval_ms": q.get("retrieval_ms"),
+            "retrieval_backend": q.get("retrieval_backend", settings.RETRIEVAL_BACKEND),
+            "retrieved_count": q.get("retrieval_count", 0),
+            "retrieval_fallback_used": bool(q.get("retrieval_fallback_used")),
+            "retrieval_fallback_reason": q.get("retrieval_fallback_reason") or "",
+            "fallback_used": bool(fallback_reason),
+        }
     return {
         "id": scene["id"],
         "turn": scene["turn"],
@@ -447,6 +629,7 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         "scenario_pack_id": (scene.get("scene_metadata") or {}).get("scenario_pack_id"),
         "prompt_version": (scene.get("scene_metadata") or {}).get("prompt_version"),
         "policy_version": (scene.get("scene_metadata") or {}).get("policy_version"),
+        **({"debug": debug_payload} if debug_payload is not None else {}),
     }
 
 
@@ -574,7 +757,11 @@ def context_preview(payload: ContextPreviewRequest, current_user=Depends(get_cur
 
 
 @app.post("/api/v1/feedback")
-def submit_feedback(payload: FeedbackCreate, current_user=Depends(get_current_user)):
+def submit_feedback(
+    payload: FeedbackCreate,
+    current_user=Depends(get_current_user),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
     if not settings.FEEDBACK_ENABLED:
         raise HTTPException(status_code=404, detail="feedback_disabled")
     session = assert_session_owner(payload.session_id, current_user["id"])
@@ -582,14 +769,41 @@ def submit_feedback(payload: FeedbackCreate, current_user=Depends(get_current_us
         raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
     if payload.report_id and payload.report_id != payload.session_id:
         raise HTTPException(status_code=400, detail="invalid_report_reference")
+    idem = (idempotency_key or "").strip()
+    if idem:
+        existing_fid = feedback_idempotency_get(current_user["id"], idem)
+        if existing_fid:
+            existing_ev = get_feedback_event(existing_fid)
+            if existing_ev:
+                return {
+                    "id": existing_ev.get("id"),
+                    "status": "duplicate_ignored",
+                    "existing_id": existing_ev.get("id"),
+                    "moderation_status": existing_ev.get("moderation_status"),
+                    "raw_retention_until": sanitize_feedback_event(existing_ev).get("raw_retention_until"),
+                }
     report_data = get_report(payload.session_id) if payload.report_id else None
     scene = get_scene(payload.scene_id) if payload.scene_id else None
     try:
         normalized = normalize_feedback_payload(payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if normalized["feedback_type"] == "micro":
+        existing_micro = get_existing_micro_feedback(
+            current_user["id"], normalized["session_id"], normalized.get("turn")
+        )
+        if existing_micro:
+            return {
+                "id": existing_micro.get("id"),
+                "status": "duplicate_ignored",
+                "existing_id": existing_micro.get("id"),
+                "moderation_status": existing_micro.get("moderation_status"),
+                "raw_retention_until": sanitize_feedback_event(existing_micro).get("raw_retention_until"),
+            }
     event = build_feedback_event(normalized, current_user=current_user, session=session, scene=scene, report=report_data)
     saved = create_feedback_event(event)
+    if idem:
+        feedback_idempotency_set(current_user["id"], idem, saved.get("id"))
     record_feedback_event(
         channel=saved.get("channel"),
         feedback_type=saved.get("feedback_type"),
@@ -643,11 +857,26 @@ def feedback_summary(session_id: str, current_user=Depends(get_current_user)):
     useful = [r.get("rating_useful") for r in rows if r.get("rating_useful") is not None]
     engaging = [r.get("rating_engaging") for r in rows if r.get("rating_engaging") is not None]
     tags = {}
+    topic_counts = {}
+    sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
     for row in rows:
         for tag in row.get("tags_json") or []:
             tags[tag] = tags.get(tag, 0) + 1
+        analysis = row.get("analysis_json") or {}
+        for topic in analysis.get("topics") or []:
+            key = topic.get("key")
+            label = topic.get("label") or key
+            if not key:
+                continue
+            if key not in topic_counts:
+                topic_counts[key] = {"key": key, "label": label, "count": 0}
+            topic_counts[key]["count"] += 1
+        sentiment = (analysis.get("sentiment") or {}).get("label")
+        if sentiment in sentiment_counts:
+            sentiment_counts[sentiment] += 1
     created_values = [r.get("created_at") for r in rows if r.get("created_at") is not None]
     latest = max(created_values) if created_values else None
+    top_topics = sorted(topic_counts.values(), key=lambda item: item.get("count", 0), reverse=True)[:5]
     return {
         "session_id": session_id,
         "submitted_count": len(rows),
@@ -655,6 +884,8 @@ def feedback_summary(session_id: str, current_user=Depends(get_current_user)):
         "avg_engaging": (sum(engaging) / len(engaging)) if engaging else None,
         "tags": tags,
         "flagged_count": sum(1 for r in rows if r.get("moderation_status") == "flagged"),
+        "top_topics": top_topics,
+        "sentiment_counts": sentiment_counts,
         "latest_created_at": latest,
     }
 
@@ -724,10 +955,15 @@ def report(session_id: str, current_user=Depends(get_current_user)):
         report_data = score_session(session, choices)
     choices = list_choices(session_id)
     report_data = attach_evidence_to_report(report_data, choices, session=session)
+    if settings.BENCHMARK_COMPARISONS_ENABLED:
+        report_data = attach_benchmark_comparisons(report_data)
     delete_derived_features(session_id)
     derived = save_derived_features(session_id, build_derived_features(session, report_data, choices))
     report_data["derived_features"] = derived
     report_data["scenario"] = report_data.get("scenario") or session.get("scenario")
+    report_data["started_at"] = session.get("created_at")
+    report_data["completed_at"] = session.get("completed_at")
+    report_data["duration_ms"] = session.get("duration_ms")
     report_data["interpretation"] = report_data.get("interpretation") or generate_interpretation(
         report_data, report_data.get("scenario", "general")
     )
@@ -750,11 +986,22 @@ def report_pdf(session_id: str, current_user=Depends(get_current_user)):
         report_data["scenario"] = session.get("scenario")
         report_data["interpretation"] = generate_interpretation(report_data, session.get("scenario", "general"))
         save_report(session_id, report_data)
+    if settings.BENCHMARK_COMPARISONS_ENABLED:
+        report_data = attach_benchmark_comparisons(report_data)
+    report_data["started_at"] = session.get("created_at")
+    report_data["completed_at"] = session.get("completed_at")
+    report_data["duration_ms"] = session.get("duration_ms")
     try:
         pdf_buffer = build_report_pdf(report_data)
     except Exception as exc:
         record_report_generation("error", perf_counter() - started)
         raise HTTPException(status_code=500, detail="pdf_generation_failed") from exc
+
+    if settings.OBJECT_ARCHIVE_ENABLED and settings.ARCHIVE_PDFS_ENABLED:
+        try:
+            archive_pdf_bytes(session_id=session_id, report_id=session_id, pdf_bytes=pdf_buffer.getvalue(), report_version="latest")
+        except Exception:
+            pass
 
     headers = {"Content-Disposition": f'attachment; filename="story-insights-report-{session_id}.pdf"'}
     record_report_generation("ok", perf_counter() - started)
@@ -845,3 +1092,76 @@ def debug_scene_trace(scene_id: str, current_user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="generation_trace_not_found")
     row.pop("trace_json", None)
     return row
+
+
+@app.post("/api/v1/admin/embeddings/seed")
+def admin_seed_embeddings(payload: dict, current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    scenario_pack_id = payload.get("scenario_pack_id")
+    force = bool(payload.get("force", False))
+    return seed_embeddings(scenario_pack_id=scenario_pack_id, force=force)
+
+
+@app.post("/api/v1/admin/faiss/rebuild")
+def admin_rebuild_faiss(payload: dict, current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    index_name = payload.get("index_name") or settings.FAISS_INDEX_NAME
+    scenario_pack_id = payload.get("scenario_pack_id")
+    meta = build_faiss_index(
+        index_name=index_name,
+        filters={"scenario_pack_id": scenario_pack_id, "active": True} if scenario_pack_id else {"active": True},
+    )
+    if settings.OBJECT_ARCHIVE_ENABLED and isinstance(meta, dict) and meta.get("local_path"):
+        archive_faiss_snapshot(meta["local_path"], meta)
+    return meta
+
+
+@app.get("/api/v1/admin/faiss/status")
+def admin_faiss_status(current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    meta = get_active_faiss_index(settings.FAISS_INDEX_NAME)
+    if not meta:
+        return {"status": "no_active_index", "index_name": settings.FAISS_INDEX_NAME}
+    return {"status": "ok", "active_index": meta}
+
+
+@app.post("/api/v1/retrieval/search")
+def retrieval_search(payload: dict, current_user=Depends(get_current_user)):
+    query_text = str(payload.get("query_text") or "").strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="query_text_required")
+    filters = payload.get("filters") or {}
+    k = int(payload.get("k") or settings.RETRIEVAL_TOP_K)
+    return {"results": retrieve_context(query_text=query_text, filters=filters, k=k)}
+
+
+@app.post("/api/v1/admin/archive/run")
+def admin_archive_run(payload: dict, current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    result = {"purged": None}
+    if payload.get("purge_expired", True):
+        result["purged"] = purge_expired_archives(limit=200)
+    return result
+
+
+@app.get("/api/v1/admin/archive/blob/{blob_id}/signed-url")
+def admin_archive_blob_signed_url(blob_id: str, current_user=Depends(get_current_user)):
+    _require_admin(current_user)
+    blob = get_archived_blob(blob_id)
+    if not blob:
+        raise HTTPException(status_code=404, detail="blob_not_found")
+    return {"blob_id": blob_id, "signed_url": get_signed_download_url(blob.get("object_key"))}
+
+
+@app.get("/api/v1/reports/{session_id}/pdf-url")
+def report_pdf_url(session_id: str, current_user=Depends(get_current_user)):
+    if not settings.ARCHIVE_PDFS_ENABLED:
+        raise HTTPException(status_code=404, detail="pdf_archive_disabled")
+    session = assert_session_owner(session_id, current_user["id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="session_not_found_or_forbidden")
+    blobs = list_archived_blobs_for_report(session_id, blob_type="pdf")
+    if not blobs:
+        raise HTTPException(status_code=404, detail="archived_pdf_not_found")
+    blob = blobs[0]
+    return {"report_id": session_id, "signed_url": get_signed_download_url(blob.get("object_key"))}

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BIGINT, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +37,7 @@ class Session(Base):
     policy_version: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Scene(Base):
@@ -216,6 +217,7 @@ class FeedbackEvent(Base):
     consent_comment: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     moderation_status: Mapped[str] = mapped_column(String, default="clean", nullable=False, index=True)
     moderation_flags_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    analysis_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     evidence_ref_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -240,3 +242,66 @@ class FeedbackDailyMetric(Base):
     tags_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class FragmentEmbedding(Base):
+    __tablename__ = "fragment_embeddings"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    fragment_key: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    fragment_type: Mapped[str] = mapped_column(String, nullable=False)
+    scenario: Mapped[str | None] = mapped_column(String, nullable=True)
+    scenario_pack_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    locale: Mapped[str | None] = mapped_column(String, nullable=True)
+    tags_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_ref_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    content_text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    embedding_model: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    embedding_revision: Mapped[str | None] = mapped_column(String, nullable=True)
+    embedding_dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedding_f32: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    normalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+
+
+class FaissIndexMetadata(Base):
+    __tablename__ = "faiss_index_metadata"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    index_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    embedding_model: Mapped[str] = mapped_column(String, nullable=False)
+    embedding_dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    metric: Mapped[str] = mapped_column(String, nullable=False)
+    index_type: Mapped[str] = mapped_column(String, nullable=False)
+    hnsw_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ef_construction: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ef_search_default: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    index_sha256: Mapped[str] = mapped_column(String, nullable=False)
+    local_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    archived_blob_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_snapshot_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False, index=True)
+
+
+class ArchivedBlob(Base):
+    __tablename__ = "archived_blobs"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_id)
+    blob_type: Mapped[str] = mapped_column(String, nullable=False)
+    storage_backend: Mapped[str] = mapped_column(String, nullable=False)
+    bucket: Mapped[str | None] = mapped_column(String, nullable=True)
+    object_key: Mapped[str] = mapped_column(String, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_encoding: Mapped[str | None] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int] = mapped_column(BIGINT, nullable=False)
+    sha256: Mapped[str] = mapped_column(String, nullable=False)
+    kms_key_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    report_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    generation_trace_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, nullable=False)
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

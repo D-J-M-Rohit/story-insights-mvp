@@ -51,13 +51,8 @@ def registered_user(test_client):
 @pytest.fixture()
 def auth_headers(test_client, registered_user):
     _, creds = registered_user
-    r = test_client.post("/api/v1/auth/login", json=creds)
+    r = test_client.post("/api/v1/auth/login", params={"include_token": "true"}, json=creds)
     assert r.status_code == 200
-    token = r.json()["access_token"]
+    token = r.json().get("access_token")
+    assert token
     return {"Authorization": f"Bearer {token}"}
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))

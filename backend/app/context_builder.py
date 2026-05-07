@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from time import perf_counter
 
+from .config import settings
 from .context_trace import build_context_trace, sha256_json
+from .retrieval import retrieve_context_with_diagnostics
 from .retrieval_store import collect_anti_patterns, retrieve_fragments
 
 
@@ -102,9 +104,47 @@ def build_context_bundle(
         history_summary = summarize_history(scenes, choices)
         cards = recent_choice_cards(scenes, choices)
         used = used_fragment_ids_from_scenes(scenes)
+        retrieval_started = perf_counter()
+        rdiag = retrieve_context_with_diagnostics(
+            query_text=f"{session.get('scenario','')} turn {policy.get('turn')} {history_summary}",
+            filters={
+                "scenario": session.get("scenario"),
+                "scenario_pack_id": (pack or {}).get("id"),
+                "active": True,
+            },
+            k=5,
+        )
+        retrieval_candidates = rdiag["items"]
+        retrieval_ms = int(rdiag.get("duration_ms") or int((perf_counter() - retrieval_started) * 1000))
         retrieved = retrieve_fragments(pack, policy, history_summary=history_summary, used_fragment_ids=used, final_k=5)
+        if retrieval_candidates:
+            retrieved.extend(
+                [
+                    {
+                        "fragment": {
+                            "id": r.get("fragment_key"),
+                            "content_type": (r.get("metadata") or {}).get("fragment_type", "retrieved"),
+                            "tags": (r.get("metadata") or {}).get("tags", []),
+                            "text": r.get("content_text", ""),
+                        },
+                        "score": r.get("final_score", r.get("vector_score", 0.0)),
+                    }
+                    for r in retrieval_candidates
+                ]
+            )
+            dedup = {}
+            for item in sorted(retrieved, key=lambda x: float(x.get("score", 0.0)), reverse=True):
+                fid = (item.get("fragment") or {}).get("id")
+                if fid and fid not in dedup:
+                    dedup[fid] = item
+            retrieved = list(dedup.values())[:5]
         anti = collect_anti_patterns(pack, scenes, policy, limit=4)
         query = build_retrieval_query(session, policy, pack, history_summary)
+        query["retrieval_ms"] = retrieval_ms
+        query["retrieval_backend"] = rdiag.get("backend") or settings.RETRIEVAL_BACKEND
+        query["retrieval_count"] = len(retrieval_candidates)
+        query["retrieval_fallback_used"] = bool(rdiag.get("fallback_used"))
+        query["retrieval_fallback_reason"] = rdiag.get("fallback_reason") or ""
     except Exception:
         history_summary = "Recent path: no prior choices."
         cards = []

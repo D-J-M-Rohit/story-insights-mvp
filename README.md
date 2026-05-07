@@ -47,10 +47,48 @@ npm run dev
 ## Auth Flow
 
 1. Register
-2. Start session
-3. Complete assessment
-4. View report
-5. Download PDF
+2. Dashboard
+3. Consent and scenario selection
+4. Start assessment (`/assessment/{session_id}`)
+5. Complete assessment
+6. View report
+7. Download PDF
+
+### Resume assessment
+
+- The UI uses `/assessment/{session_id}` so a refresh reloads server state via `GET /api/v1/sessions/{session_id}/state` (owner-checked).
+- The latest **unanswered** scene is restored when present; otherwise the client requests the next scene as usual (no duplicate scene creation from the resume endpoint).
+- If the session is already complete, the client redirects to `/report/{session_id}`.
+
+### Micro-feedback idempotency
+
+- In-session micro-feedback is limited server-side to **one stored event per user, session, and turn**; repeats return `{"status": "duplicate_ignored", "existing_id": "..."}` without a second row.
+- An optional `Idempotency-Key` header deduplicates feedback POSTs per user (in-memory, MVP).
+
+### Auth response modes
+
+- With `AUTH_COOKIE_ENABLED=true` and `AUTH_RETURN_TOKEN_IN_BODY=false` (default), `POST /api/v1/auth/register` and `POST /api/v1/auth/login` return `token_type: "cookie"` and **omit** `access_token` from JSON while still setting the HttpOnly cookie.
+- For scripts and tests, use `?include_token=true` or request header `X-Return-Bearer-Token: true` (when `AUTH_ALLOW_TOKEN_RESPONSE_OVERRIDE=true`) to receive `access_token` in the body.
+
+### Optional provider smoke tests
+
+Skipped unless enabled explicitly:
+
+```bash
+cd backend
+RUN_PROVIDER_SMOKE_TESTS=true LLM_PROVIDER=openai OPENAI_API_KEY=your_key pytest tests/test_provider_smoke_optional.py -k openai
+RUN_PROVIDER_SMOKE_TESTS=true LLM_PROVIDER=gemini GEMINI_API_KEY=your_key pytest tests/test_provider_smoke_optional.py -k gemini
+```
+
+### Privacy scrubbing
+
+- Shared `privacy_scrub` pattern rules redact emails, phones, URLs, bearer/JWT-like strings, API-key-shaped text, database URLs, IPs, SSN-like patterns, and long numeric IDs in logs and nested trace payloads (key-based redaction still applies).
+
+### Retrieval fallback observability
+
+- Retrieval can record a low-cardinality **`retrieval_fallback_reason`** (for example `disabled`, `no_query`, `no_results`, `index_missing`, `faiss_error`, `embedding_error`) on context traces and, when `BENCHMARK_DEBUG_FIELDS_ENABLED=true`, under `debug` on scene responses alongside `retrieval_fallback_used`.
+- Prometheus counter: **`story_insights_retrieval_fallback_total`** with labels `backend` and `reason` only (no user/session/query text).
+- Failures degrade to **no retrieval context**; story generation and **scoring** continue unchanged.
 
 ## Environment
 
@@ -68,11 +106,25 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/story_insight
 JWT_SECRET_KEY=change-me-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
+AUTH_COOKIE_ENABLED=true
+AUTH_COOKIE_NAME=access_token
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_SAMESITE=lax
+AUTH_COOKIE_MAX_AGE_MINUTES=10080
+AUTH_RETURN_TOKEN_IN_BODY=false
+AUTH_ALLOW_TOKEN_RESPONSE_OVERRIDE=true
 
 CORS_ORIGINS=http://localhost:5173
 
 REPORT_LLM_SUMMARY_ENABLED=true
 ```
+
+Cookie auth notes:
+- Browser auth uses an HttpOnly cookie by default when `AUTH_COOKIE_ENABLED=true`.
+- By default (`AUTH_RETURN_TOKEN_IN_BODY=false`) login/register JSON does **not** include `access_token`; use `?include_token=true` or `X-Return-Bearer-Token: true` for bearer in the body.
+- Bearer auth remains supported for scripts/tests.
+- JWT storage in browser `localStorage` was removed for security.
+- In production, set `AUTH_COOKIE_SECURE=true` and serve over HTTPS.
 
 ## Cloud Database
 
@@ -98,6 +150,8 @@ REPORT_LLM_SUMMARY_ENABLED=true
 - `POST /api/v1/auth/login`
 - `GET /api/v1/me`
 - `GET /api/v1/my-sessions`
+- `GET /api/v1/sessions/{session_id}`
+- `GET /api/v1/sessions/{session_id}/state`
 - `POST /api/v1/sessions`
 - `POST /api/v1/scenes/next`
 - `GET /api/v1/reports/{session_id}`
@@ -207,6 +261,12 @@ Provider health endpoint:
 
 - `GET http://localhost:8000/api/v1/provider/status`
 
+Provider circuit status endpoint:
+
+- `GET http://localhost:8000/api/v1/provider/circuit-status` (admin)
+- Returns circuit state (`closed`/`open`/`half_open`) and failure counters.
+- Does not expose API keys, tokens, prompts, or raw secrets.
+
 Future production direction:
 
 - Scrape `/metrics` with Prometheus.
@@ -226,6 +286,23 @@ Future production direction:
 - Aggregate feedback rollups may be retained for 365 days.
 - Raw feedback comments are not logged in structured logs.
 - Micro-feedback appears at most once per session (frontend local session marker).
+
+## Analysis NLP Service
+
+- MVP includes a lightweight deterministic analysis service for feedback/comment text.
+- It performs:
+  - text normalization and preprocessing
+  - NER-style PII redaction with regex/rule patterns
+  - controlled topic tagging from comment text and tags
+  - optional sentiment labeling for product-experience feedback
+- It does not call OpenAI/Gemini or any external LLM.
+- It does not use heavy NLP model pipelines in this MVP.
+- It does not affect scoring, CDI, ADQ, PEN proxies, confidence bands, or benchmark comparisons.
+- Sentiment/topic outputs are UX/quality signals only and are not clinical, diagnostic, or hiring conclusions.
+
+Architecture note:
+- In the MVP implementation, the Analysis and Reports layer focuses on telemetry normalization, deterministic scoring, evidence mapping, benchmark comparison, report interpretation, and lightweight feedback/comment analysis.
+- Standalone advanced sentiment, named-entity recognition, and topic modeling remain future extensions and are not core scoring inputs.
 
 Endpoints:
 - `POST /api/v1/feedback`
@@ -284,3 +361,71 @@ curl -X PATCH "http://localhost:8000/api/v1/admin/feedback/<feedback_id>" \
   -H "Content-Type: application/json" \
   -d '{"moderation_status":"resolved","reviewer_note":"triaged"}'
 ```
+
+## Benchmarks, Retrieval, FAISS, and Object Storage
+
+- Retrieval is optional and disabled by default (`RETRIEVAL_ENABLED=false`).
+- Retrieval improves narrative continuity/context only.
+- Retrieval does not affect scoring, derived features, confidence bands, or evidence cards.
+- PostgreSQL/SQLite stores fragment metadata + embeddings as the system of record.
+- FAISS is an optional local ANN index built from `fragment_embeddings`.
+- Exact retrieval can be used before FAISS (`RETRIEVAL_BACKEND=exact`).
+- Object storage is optional and used for archival artifacts.
+- PDF streaming remains the default report download behavior.
+- Archived PDFs are disabled by default (`ARCHIVE_PDFS_ENABLED=false`).
+- Buckets should remain private; signed URLs are short-lived.
+
+Install backend deps:
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+Seed embeddings:
+
+```bash
+python -m app.scripts.seed_embeddings --scenario-pack default
+```
+
+Rebuild FAISS:
+
+```bash
+python -m app.scripts.rebuild_faiss --index default --scenario-pack default
+```
+
+Benchmark scene generation:
+
+```bash
+BASE_URL=http://localhost:8000 N=50 python -m app.scripts.bench_scene_generation
+```
+
+Benchmark embeddings + FAISS:
+
+```bash
+MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2 N=100000 python -m app.scripts.bench_embeddings_faiss
+```
+
+Benchmark retrieval + generation:
+
+```bash
+BASE_URL=http://localhost:8000 N=30 python -m app.scripts.bench_retrieval_generation
+```
+
+Object storage options:
+- `filesystem` backend works locally by default.
+- MinIO/S3 can be enabled via `OBJECT_STORAGE_BACKEND` + endpoint/credential env vars.
+
+Retention defaults:
+- traces: 30 days
+- prompts: 30 days
+- PDFs: 7 days (archiving disabled by default)
+- FAISS snapshots: 14 days
+
+Security notes:
+- do not expose raw prompt/trace archives to participants
+- keep object storage keys private
+- secrets are not logged
+
+Future migration note:
+- pgvector, Weaviate, Pinecone, Redis queues, and Kubernetes remain future options and are not part of this MVP.

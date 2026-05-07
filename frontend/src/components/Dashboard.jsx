@@ -1,45 +1,24 @@
 import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createSession, getMySessions, getScenarioPacks } from "../api";
+import { getMySessions } from "../api";
 import { SessionContext } from "../App";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, setSession, logout } = useContext(SessionContext);
-  const [scenario, setScenario] = useState("workplace");
-  const [maxTurns, setMaxTurns] = useState(20);
   const [sessions, setSessions] = useState([]);
-  const [packs, setPacks] = useState([]);
-  const [scenarioPackId, setScenarioPackId] = useState("workplace_core_v1");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function loadSessions() {
       try {
         setSessions(await getMySessions());
-        const packRows = await getScenarioPacks();
-        setPacks(packRows);
       } catch (e) {
         setError(e.message);
       }
     }
     loadSessions();
   }, []);
-
-  async function start() {
-    setLoading(true);
-    setError("");
-    try {
-      const session = await createSession({ scenario, scenario_pack_id: scenarioPackId, max_turns: Number(maxTurns) });
-      setSession(session);
-      navigate("/assessment");
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <div className="page">
@@ -55,46 +34,14 @@ export default function Dashboard() {
 
       <div className="card">
         <h3>Start New Session</h3>
-        <label>
-          Scenario Pack
-          <select
-            value={scenarioPackId}
-            onChange={(e) => {
-              const id = e.target.value;
-              setScenarioPackId(id);
-              const selectedPack = packs.find((p) => p.id === id);
-              if (selectedPack?.scenario) setScenario(selectedPack.scenario);
-            }}
-          >
-            {(packs.length ? packs : [
-              { id: "workplace_core_v1", title: "Workplace Core", scenario: "workplace" },
-              { id: "school_core_v1", title: "School Core", scenario: "school" },
-              { id: "emergency_core_v1", title: "Emergency Core", scenario: "emergency" },
-            ]).map((p) => (
-              <option key={p.id} value={p.id}>{p.title || p.id}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Scenario
-          <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            <option value="workplace">workplace</option>
-            <option value="school">school</option>
-            <option value="emergency">emergency</option>
-          </select>
-        </label>
-        <label>
-          Max turns
-          <select value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)}>
-            <option value="10">10</option>
-            <option value="15">15</option>
-            <option value="20">20</option>
-            <option value="25">25</option>
-            <option value="30">30</option>
-          </select>
-        </label>
-        <button onClick={start} disabled={loading}>
-          {loading ? "Starting..." : "Start new session"}
+        <p className="muted">
+          Review consent and scenario settings before starting a new assessment.
+        </p>
+        <button onClick={() => {
+          setSession(null);
+          navigate("/consent");
+        }}>
+          Start new session
         </button>
       </div>
 
@@ -107,6 +54,11 @@ export default function Dashboard() {
               <strong>{s.scenario}</strong>
               <p className="muted small">{new Date(s.created_at).toLocaleString()} · {s.status}</p>
             </div>
+            {s.status === "active" && (
+              <button className="inline-btn" onClick={() => navigate(`/assessment/${s.id}`)}>
+                Resume
+              </button>
+            )}
             {s.status === "complete" && (
               <button className="inline-btn" onClick={() => navigate(`/report/${s.id}`)}>
                 View report

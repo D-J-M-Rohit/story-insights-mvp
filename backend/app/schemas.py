@@ -20,6 +20,20 @@ class SessionOut(BaseModel):
     created_at: Optional[str] = None
 
 
+class SessionDetailOut(BaseModel):
+    id: str
+    user_id: str
+    scenario: str
+    max_turns: int
+    current_turn: int
+    status: str
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    duration_ms: Optional[int] = None
+    scenario_pack_id: Optional[str] = None
+    policy_version: Optional[str] = None
+
+
 class HoverEvent(BaseModel):
     option_id: str
     t_ms: int
@@ -62,6 +76,14 @@ class SceneOut(BaseModel):
     policy_version: Optional[str] = None
 
 
+class SessionStateOut(BaseModel):
+    session: SessionDetailOut
+    latest_scene: Optional[SceneOut] = None
+    choices_count: int
+    can_resume: bool
+    report_ready: bool
+
+
 class NextSceneRequest(BaseModel):
     session_id: str
     scene_id: Optional[str] = None
@@ -83,6 +105,12 @@ class UserOut(BaseModel):
     id: str
     email: str
     role: str
+
+
+class AuthOut(BaseModel):
+    access_token: Optional[str] = None
+    token_type: str
+    user: UserOut
 
 
 class TokenOut(BaseModel):
@@ -122,6 +150,10 @@ class ReportOut(BaseModel):
     interpretation: Optional[dict] = None
     evidence_cards: Optional[List[dict]] = None
     derived_features: Optional[List[dict]] = None
+    benchmark_comparisons: Optional[List[dict]] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    duration_ms: Optional[int] = None
 
 
 class EvidenceCardOut(BaseModel):
@@ -290,6 +322,7 @@ class FeedbackOut(BaseModel):
     consent_comment: bool = False
     moderation_status: str
     moderation_flags: List[str] = Field(default_factory=list)
+    analysis: Optional[dict] = None
     created_at: Optional[str] = None
     raw_retention_until: Optional[str] = None
 
@@ -306,4 +339,6 @@ class FeedbackSummaryOut(BaseModel):
     avg_engaging: Optional[float] = None
     tags: dict
     flagged_count: int
+    top_topics: Optional[List[dict]] = None
+    sentiment_counts: Optional[dict] = None
     latest_created_at: Optional[str] = None

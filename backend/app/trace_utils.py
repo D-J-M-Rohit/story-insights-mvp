@@ -59,6 +59,9 @@ def make_request_id() -> str:
     return "req_" + uuid.uuid4().hex[:12]
 
 
+from .privacy_scrub import scrub_sensitive_text
+
+
 def redact_sensitive(obj):
     def _walk(value):
         if isinstance(value, dict):
@@ -72,6 +75,8 @@ def redact_sensitive(obj):
             return out
         if isinstance(value, list):
             return [_walk(v) for v in value]
+        if isinstance(value, str):
+            return scrub_sensitive_text(value)
         return value
 
     return _walk(deepcopy(obj))

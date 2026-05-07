@@ -52,6 +52,8 @@ def _ensure_columns():
     with engine.begin() as conn:
         conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scenario_pack_id VARCHAR")
         conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS policy_version VARCHAR")
+        conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS duration_ms INTEGER")
+        conn.exec_driver_sql("ALTER TABLE feedback_events ADD COLUMN IF NOT EXISTS analysis_json JSON DEFAULT '{}'::json")
         conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS evidence_count INTEGER DEFAULT 0")
         conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_level VARCHAR DEFAULT 'exploratory'")
         conn.exec_driver_sql("ALTER TABLE derived_features ADD COLUMN IF NOT EXISTS confidence_low DOUBLE PRECISION DEFAULT 0")
@@ -66,4 +68,13 @@ def _ensure_columns():
         )
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_feedback_daily_metrics_day_scenario_pack_id ON feedback_daily_metrics (day, scenario_pack_id)"
+        )
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_fragment_embeddings_fragment_key_unique ON fragment_embeddings (fragment_key)"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_fragment_embeddings_scenario_pack_fragment_type ON fragment_embeddings (scenario_pack_id, fragment_type)"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_archived_blobs_blob_type_created_at_desc ON archived_blobs (blob_type, created_at DESC)"
         )

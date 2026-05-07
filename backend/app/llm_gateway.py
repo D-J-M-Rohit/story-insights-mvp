@@ -3,6 +3,7 @@ import uuid
 from time import perf_counter
 
 from .config import settings
+from .circuit_breaker import get_provider_circuit_breaker
 from .logging_config import log_event
 from .metrics import (
     record_provider_call,
@@ -16,6 +17,7 @@ from .prompts import build_scene_prompt
 from .scene_validation import validate_scene_against_policy
 
 TRAIT_KEYS = ["risk", "social", "empathy", "decisiveness", "emotional_regulation"]
+circuit_breaker = get_provider_circuit_breaker(settings)
 
 
 def _clamp01(x):
@@ -82,17 +84,24 @@ class LLMGateway:
             "recent_choices": [],
         }
         provider = (settings.LLM_PROVIDER or "mock").lower()
+        model = self.model_snapshot(provider)
         fallback_reason = None
         started = perf_counter()
         if provider == "openai":
             if not settings.OPENAI_API_KEY:
                 fallback_reason = "missing_api_key"
                 scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+            elif not circuit_breaker.allow_request(provider, model):
+                fallback_reason = "circuit_open"
+                scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
             else:
                 scene = self.generate_openai_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
         elif provider == "gemini":
             if not settings.GEMINI_API_KEY:
                 fallback_reason = "missing_api_key"
+                scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
+            elif not circuit_breaker.allow_request(provider, model):
+                fallback_reason = "circuit_open"
                 scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
             else:
                 scene = self.generate_gemini_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
@@ -112,9 +121,13 @@ class LLMGateway:
             fallback_scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
             normalized = self.normalize_scene(fallback_scene, session["id"], turn, policy, context_bundle)
             validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
+        if provider in {"openai", "gemini"}:
+            if fallback_reason:
+                circuit_breaker.record_failure(provider, model, fallback_reason)
+            else:
+                circuit_breaker.record_success(provider, model)
         latency_ms = int((perf_counter() - started) * 1000)
         status = "ok" if provider == "mock" else ("fallback" if fallback_reason else "ok")
-        model = self.model_snapshot(provider)
         record_scene_generation(provider, model, status, latency_ms / 1000.0)
         record_provider_call(provider, model, status)
         if fallback_reason:

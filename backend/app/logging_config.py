@@ -1,4 +1,3 @@
-import copy
 import hashlib
 import hmac
 import json
@@ -7,26 +6,8 @@ import sys
 from datetime import datetime, timezone
 
 from .config import settings
+from .privacy_scrub import redact_sensitive
 from .request_context import current_request_id, current_trace_id, session_id_var, user_hash_var
-
-SENSITIVE_KEYS = {
-    "password",
-    "token",
-    "secret",
-    "api_key",
-    "authorization",
-    "cookie",
-    "email",
-    "jwt",
-    "credential",
-    "openai",
-    "gemini",
-    "database_url",
-    "prompt",
-    "scene",
-    "report",
-    "telemetry",
-}
 
 
 def hash_identifier(value: str | None, salt: str | None = None) -> str | None:
@@ -35,23 +16,6 @@ def hash_identifier(value: str | None, salt: str | None = None) -> str | None:
     salt_value = (salt if salt is not None else settings.LOG_SALT) or ""
     digest = hmac.new(salt_value.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"hash:{digest[:16]}"
-
-
-def redact_sensitive(obj):
-    def _walk(value):
-        if isinstance(value, dict):
-            output = {}
-            for key, nested in value.items():
-                if any(token in str(key).lower() for token in SENSITIVE_KEYS):
-                    output[key] = "[REDACTED]"
-                else:
-                    output[key] = _walk(nested)
-            return output
-        if isinstance(value, list):
-            return [_walk(item) for item in value]
-        return value
-
-    return _walk(copy.deepcopy(obj))
 
 
 def truncate_value(value, max_len=300):

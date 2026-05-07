@@ -14,12 +14,14 @@ def test_register_login_and_me(test_client):
     assert reg.status_code == 200
     body = reg.json()
     assert "password_hash" not in str(body).lower()
-    token = body["access_token"]
-    me = test_client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    assert body.get("token_type") == "cookie"
+    assert body.get("access_token") in (None, "")
+    me = test_client.get("/api/v1/me")
     assert me.status_code == 200
     assert me.json()["email"] == email
 
 
 def test_protected_route_requires_token(test_client):
+    test_client.cookies.clear()
     r = test_client.get("/api/v1/my-sessions")
     assert r.status_code in (401, 403)

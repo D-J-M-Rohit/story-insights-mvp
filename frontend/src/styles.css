@@ -309,3 +309,37 @@ button:disabled {
   font-size: 0.9rem;
   color: #4b5563;
 }
+
+.benchmark-list {
+  display: grid;
+  gap: 10px;
+}
+
+.benchmark-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.benchmark-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.benchmark-right {
+  text-align: right;
+}
+
+.benchmark-band {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-size: 0.8rem;
+}

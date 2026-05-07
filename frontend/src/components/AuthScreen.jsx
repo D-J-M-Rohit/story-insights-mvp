@@ -19,7 +19,7 @@ export default function AuthScreen() {
     try {
       const fn = mode === "login" ? loginApi : registerApi;
       const result = await fn(email, password);
-      login(result.user, result.access_token);
+      login(result.user);
       navigate("/dashboard");
     } catch (err) {
       setError(err.message || "auth_failed");

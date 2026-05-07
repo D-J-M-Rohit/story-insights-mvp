@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,7 +12,7 @@ from .request_context import set_request_context
 from .store import get_user_by_id
 
 pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
-bearer_scheme = HTTPBearer(auto_error=True)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 BCRYPT_MAX_BYTES = 72
 
@@ -63,8 +63,13 @@ def decode_access_token(token: str) -> dict:
     return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    token = credentials.credentials
+def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    token = credentials.credentials if credentials else None
+    if not token and bool(getattr(settings, "AUTH_COOKIE_ENABLED", True)):
+        token = request.cookies.get(getattr(settings, "AUTH_COOKIE_NAME", "access_token"))
+    if not token:
+        record_auth_failure("invalid_token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
     try:
         payload = decode_access_token(token)
     except JWTError as exc:

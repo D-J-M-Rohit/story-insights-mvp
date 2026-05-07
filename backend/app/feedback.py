@@ -2,6 +2,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from .analysis_nlp import ANALYSIS_VERSION, analyze_feedback_text, safe_comment_for_storage
 from .config import settings
 from .request_context import current_request_id, current_trace_id
 
@@ -159,7 +160,23 @@ def build_evidence_ref(session, scene=None, report=None, traces=None) -> dict:
 
 
 def build_feedback_event(payload, current_user, session, scene=None, report=None) -> dict:
-    status, flags = moderate_comment(payload.get("comment"), payload.get("tags_json", []))
+    tags = payload.get("tags_json", [])
+    raw_comment = payload.get("comment") if bool(payload.get("consent_comment")) else None
+    if settings.ANALYSIS_NLP_ENABLED and settings.ANALYSIS_PII_REDACTION_ENABLED:
+        storage = safe_comment_for_storage(raw_comment, tags=tags)
+        comment_redacted = storage.get("comment_redacted")
+        analysis_json = storage.get("analysis_json") or analyze_feedback_text(None, tags=tags)
+    else:
+        comment_redacted = redact_comment(raw_comment)
+        analysis_json = analyze_feedback_text(comment_redacted, tags=tags)
+    status, flags = moderate_comment(raw_comment, tags)
+    pii_types = ((analysis_json.get("pii") or {}).get("entity_types") or []) if isinstance(analysis_json, dict) else []
+    if pii_types:
+        flags = sorted(set(flags + ["pii"]))
+    if any((t.get("key") == "technical_bug") for t in (analysis_json.get("topics") or [])):
+        flags = sorted(set(flags + ["bug_report"]))
+    if flags and status != "flagged":
+        status = "flagged"
     return {
         "id": str(uuid.uuid4()),
         "user_id": (current_user or {}).get("id"),
@@ -172,12 +189,13 @@ def build_feedback_event(payload, current_user, session, scene=None, report=None
         "category": payload.get("category"),
         "rating_useful": payload.get("rating_useful"),
         "rating_engaging": payload.get("rating_engaging"),
-        "tags_json": payload.get("tags_json", []),
-        "comment": payload.get("comment"),
-        "comment_redacted": redact_comment(payload.get("comment")),
+        "tags_json": tags,
+        "comment": raw_comment,
+        "comment_redacted": comment_redacted,
         "consent_comment": bool(payload.get("consent_comment")),
         "moderation_status": status,
         "moderation_flags_json": flags,
+        "analysis_json": analysis_json if isinstance(analysis_json, dict) else {"version": ANALYSIS_VERSION},
         "evidence_ref_json": build_evidence_ref(session=session, scene=scene, report=report),
         "trace_id": current_trace_id(),
         "request_id": current_request_id(),
@@ -237,6 +255,7 @@ def sanitize_feedback_event(event: dict, include_comment: bool = False) -> dict:
         "consent_comment": bool(event.get("consent_comment")),
         "moderation_status": event.get("moderation_status"),
         "moderation_flags": event.get("moderation_flags_json") or [],
+        "analysis": event.get("analysis_json") or {"version": ANALYSIS_VERSION},
         "created_at": event.get("created_at"),
     }
     if include_comment and event.get("moderation_status") in {"clean", "redacted"}:

@@ -9,6 +9,9 @@ from .models import (
     Choice,
     ContextTrace,
     DerivedFeature,
+    FragmentEmbedding,
+    FaissIndexMetadata,
+    ArchivedBlob,
     FeedbackDailyMetric,
     FeedbackEvent,
     GenerationTrace,
@@ -101,6 +104,39 @@ def get_session(session_id):
         return _to_dict(session)
 
 
+def get_latest_scene_for_session(session_id: str) -> dict | None:
+    with SessionLocal() as db:
+        row = db.execute(select(Scene).where(Scene.session_id == session_id).order_by(Scene.turn.desc()).limit(1)).scalar_one_or_none()
+        if not row:
+            return None
+        out = _to_dict(row)
+        out["options"] = out.pop("options_json", [])
+        return out
+
+
+def get_resume_scene_for_session(session_id: str) -> dict | None:
+    scenes = list_scenes(session_id)
+    choices = list_choices(session_id)
+    answered = {c["scene_id"] for c in choices}
+    for sc in reversed(scenes):
+        if sc["id"] not in answered:
+            return sc
+    return None
+
+
+def get_existing_micro_feedback(user_id: str, session_id: str, turn: int | None) -> dict | None:
+    with SessionLocal() as db:
+        q = select(FeedbackEvent).where(
+            FeedbackEvent.user_id == user_id,
+            FeedbackEvent.session_id == session_id,
+            FeedbackEvent.feedback_type == "micro",
+        )
+        if turn is not None:
+            q = q.where(FeedbackEvent.turn == turn)
+        row = db.execute(q.order_by(FeedbackEvent.created_at.desc()).limit(1)).scalar_one_or_none()
+        return _to_dict(row) if row else None
+
+
 def list_sessions_for_user(user_id):
     with SessionLocal() as db:
         rows = db.execute(
@@ -133,7 +169,17 @@ def complete_session(session_id):
         if not session:
             return None
         session.status = "complete"
-        session.completed_at = _now()
+        if not session.completed_at:
+            session.completed_at = _now()
+        if session.created_at and session.completed_at:
+            started_at = session.created_at
+            completed_at = session.completed_at
+            if started_at.tzinfo is None and completed_at.tzinfo is not None:
+                started_at = started_at.replace(tzinfo=completed_at.tzinfo)
+            elif completed_at.tzinfo is None and started_at.tzinfo is not None:
+                completed_at = completed_at.replace(tzinfo=started_at.tzinfo)
+            delta = completed_at - started_at
+            session.duration_ms = max(0, int(delta.total_seconds() * 1000))
         db.commit()
         db.refresh(session)
         return _to_dict(session)
@@ -499,6 +545,21 @@ def delete_derived_features(session_id: str) -> None:
         db.commit()
 
 
+_FEEDBACK_IDEMPOTENCY: dict[str, str] = {}
+_FEEDBACK_IDEMPOTENCY_LIMIT = 3000
+
+
+def feedback_idempotency_get(user_id: str, key: str) -> str | None:
+    return _FEEDBACK_IDEMPOTENCY.get(f"{user_id}:{key.strip()}")
+
+
+def feedback_idempotency_set(user_id: str, key: str, feedback_id: str) -> None:
+    composite = f"{user_id}:{key.strip()}"
+    if len(_FEEDBACK_IDEMPOTENCY) >= _FEEDBACK_IDEMPOTENCY_LIMIT:
+        _FEEDBACK_IDEMPOTENCY.clear()
+    _FEEDBACK_IDEMPOTENCY[composite] = feedback_id
+
+
 def create_feedback_event(event: dict) -> dict:
     with SessionLocal() as db:
         row = FeedbackEvent(**event)
@@ -634,3 +695,150 @@ def get_feedback_profile(session_id: str) -> dict:
     events = list_feedback_for_session(session_id)
     current_turn = max([int(e.get("turn") or 0) for e in events] + [0])
     return build_feedback_profile(events, current_turn=current_turn)
+
+
+def create_fragment_embedding(fragment: dict) -> dict:
+    with SessionLocal() as db:
+        row = FragmentEmbedding(**fragment)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def upsert_fragment_embedding(fragment: dict) -> dict:
+    with SessionLocal() as db:
+        existing = db.execute(
+            select(FragmentEmbedding).where(FragmentEmbedding.fragment_key == fragment["fragment_key"])
+        ).scalar_one_or_none()
+        if existing:
+            changed = (
+                existing.content_sha256 != fragment.get("content_sha256")
+                or existing.embedding_model != fragment.get("embedding_model")
+                or (existing.embedding_revision or "") != (fragment.get("embedding_revision") or "")
+                or bool(existing.active) != bool(fragment.get("active", True))
+            )
+            if changed:
+                for key, value in fragment.items():
+                    setattr(existing, key, value)
+                existing.updated_at = _now()
+                db.commit()
+                db.refresh(existing)
+            return _to_dict(existing)
+        row = FragmentEmbedding(**fragment)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def get_fragment_embedding(fragment_id: str):
+    with SessionLocal() as db:
+        row = db.get(FragmentEmbedding, fragment_id)
+        return _to_dict(row)
+
+
+def list_active_fragments(filters: dict | None = None, limit: int | None = None):
+    filters = filters or {}
+    with SessionLocal() as db:
+        query = select(FragmentEmbedding).where(FragmentEmbedding.active == bool(filters.get("active", True)))
+        if filters.get("scenario"):
+            query = query.where(FragmentEmbedding.scenario == filters["scenario"])
+        if filters.get("scenario_pack_id"):
+            query = query.where(FragmentEmbedding.scenario_pack_id == filters["scenario_pack_id"])
+        if filters.get("fragment_type"):
+            query = query.where(FragmentEmbedding.fragment_type == filters["fragment_type"])
+        if filters.get("locale"):
+            query = query.where(FragmentEmbedding.locale == filters["locale"])
+        if limit:
+            query = query.limit(limit)
+        rows = db.execute(query.order_by(FragmentEmbedding.updated_at.desc())).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def list_fragment_embeddings_for_index(filters: dict | None = None):
+    return list_active_fragments(filters=filters or {"active": True}, limit=None)
+
+
+def create_faiss_index_metadata(metadata: dict) -> dict:
+    with SessionLocal() as db:
+        row = FaissIndexMetadata(**metadata)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def get_active_faiss_index(index_name: str = "default"):
+    with SessionLocal() as db:
+        row = db.execute(
+            select(FaissIndexMetadata).where(
+                FaissIndexMetadata.index_name == index_name,
+                FaissIndexMetadata.active == True,  # noqa: E712
+            )
+        ).scalar_one_or_none()
+        return _to_dict(row)
+
+
+def set_active_faiss_index(index_name: str, metadata_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(FaissIndexMetadata).where(FaissIndexMetadata.index_name == index_name)
+        ).scalars().all()
+        selected = None
+        for row in rows:
+            row.active = row.id == metadata_id
+            if row.id == metadata_id:
+                selected = row
+        db.commit()
+        if selected:
+            db.refresh(selected)
+        return _to_dict(selected)
+
+
+def create_archived_blob(blob: dict) -> dict:
+    with SessionLocal() as db:
+        row = ArchivedBlob(**blob)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def get_archived_blob(blob_id: str):
+    with SessionLocal() as db:
+        row = db.get(ArchivedBlob, blob_id)
+        return _to_dict(row)
+
+
+def list_expired_archived_blobs(now=None, limit: int = 100):
+    now = now or _now()
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(ArchivedBlob)
+            .where(ArchivedBlob.deleted_at.is_(None), ArchivedBlob.retention_until.is_not(None), ArchivedBlob.retention_until < now)
+            .limit(limit)
+        ).scalars()
+        return [_to_dict(r) for r in rows]
+
+
+def mark_archived_blob_deleted(blob_id: str):
+    with SessionLocal() as db:
+        row = db.get(ArchivedBlob, blob_id)
+        if not row:
+            return None
+        row.deleted_at = _now()
+        db.commit()
+        db.refresh(row)
+        return _to_dict(row)
+
+
+def list_archived_blobs_for_report(report_id: str, blob_type: str | None = None, include_deleted: bool = False):
+    with SessionLocal() as db:
+        query = select(ArchivedBlob).where(ArchivedBlob.report_id == report_id)
+        if blob_type:
+            query = query.where(ArchivedBlob.blob_type == blob_type)
+        if not include_deleted:
+            query = query.where(ArchivedBlob.deleted_at.is_(None))
+        rows = db.execute(query.order_by(ArchivedBlob.created_at.desc())).scalars()
+        return [_to_dict(r) for r in rows]

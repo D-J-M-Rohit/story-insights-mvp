@@ -12,5 +12,11 @@ passlib[bcrypt]
 reportlab
 pytest
 pytest-cov
-httpx
-prometheus-client
+httpx>=0.27,<1
+prometheus-client>=0.23,<1
+sentence-transformers==5.4.1
+faiss-cpu==1.13.2
+huggingface-hub==1.14.0
+boto3==1.43.5
+minio==7.2.20
+numpy
