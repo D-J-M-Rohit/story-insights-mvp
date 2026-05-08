@@ -140,9 +140,3 @@ def collect_anti_patterns(pack, scenes, policy, limit=4) -> list[str]:
         if consensus_like >= 2:
             items.append("Avoid making the strongest option always a group-consensus action.")
     return items[:limit]
-
-
-# TODO: Add sentence-transformers embeddings for semantic retrieval.
-# TODO: Add FAISS HNSW index for scalable vector search.
-# TODO: Add cross-encoder reranking if retrieval quality becomes important.
-# TODO: Add retrieval evaluation metrics for context relevance and coverage.

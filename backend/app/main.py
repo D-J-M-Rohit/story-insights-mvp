@@ -462,6 +462,13 @@ def next_scene(payload: NextSceneRequest, current_user=Depends(get_current_user)
         )
         update_session_turn(session["id"], prev_scene["turn"])
         session = get_session(session["id"])
+    else:
+        # Idempotency guard for first-scene fetches (for example React Strict Mode
+        # or transient client retries). If an unanswered scene already exists,
+        # return it instead of generating a new scene.
+        resume_scene = get_resume_scene_for_session(session["id"])
+        if resume_scene:
+            return _scene_row_to_scene_out(resume_scene)
 
     if session["current_turn"] >= session["max_turns"]:
         complete_session(session["id"])

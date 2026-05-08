@@ -1,23 +1,50 @@
 import { useEffect, useMemo, useState } from "react";
 import { submitFeedback } from "../api";
 
-export default function MicroFeedbackPrompt({ sessionId, sceneId, turn, onDismiss, onSubmitted }) {
+function buildMilestones(maxTurns) {
+  const total = Number.isFinite(Number(maxTurns)) ? Math.max(0, Math.floor(Number(maxTurns))) : 0;
+  const q1 = Math.floor(total * 0.25);
+  const q3 = Math.floor(total * 0.75);
+  const unique = [...new Set([q1, q3])].filter((v) => v > 0);
+  return unique.sort((a, b) => a - b);
+}
+
+export default function MicroFeedbackPrompt({ sessionId, sceneId, turn, maxTurns, onDismiss, onSubmitted }) {
   const enabled = String(import.meta.env.VITE_FEEDBACK_MICRO_PROMPT_ENABLED ?? "true").toLowerCase() !== "false";
   const [pace, setPace] = useState("");
   const [clarity, setClarity] = useState("");
   const [visible, setVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [activeMilestone, setActiveMilestone] = useState(null);
 
-  const doneKey = useMemo(() => `story_insights_micro_feedback_done_${sessionId}`, [sessionId]);
+  const milestones = useMemo(() => buildMilestones(maxTurns), [maxTurns]);
+  const completedCount = Math.max(0, Number(turn || 0) - 1);
+
+  const milestoneDoneKey = useMemo(
+    () => (activeMilestone == null ? null : `story_insights_micro_feedback_done_${sessionId}_${activeMilestone}`),
+    [activeMilestone, sessionId]
+  );
 
   useEffect(() => {
     if (!sessionId || !enabled) return;
-    const done = localStorage.getItem(doneKey) === "1";
-    setVisible(!done && turn >= 2);
-  }, [doneKey, sessionId, turn, enabled]);
+    const pendingMilestone = milestones.find((m) => {
+      if (completedCount !== m) return false;
+      const key = `story_insights_micro_feedback_done_${sessionId}_${m}`;
+      return localStorage.getItem(key) !== "1";
+    });
+    setActiveMilestone(pendingMilestone ?? null);
+    setVisible(Boolean(pendingMilestone));
+  }, [sessionId, enabled, milestones, completedCount]);
+
+  useEffect(() => {
+    if (!visible) {
+      setPace("");
+      setClarity("");
+    }
+  }, [visible]);
 
   function close() {
-    localStorage.setItem(doneKey, "1");
+    if (milestoneDoneKey) localStorage.setItem(milestoneDoneKey, "1");
     setVisible(false);
     onDismiss?.();
   }
@@ -36,12 +63,12 @@ export default function MicroFeedbackPrompt({ sessionId, sceneId, turn, onDismis
         category: "pacing_clarity",
         tags,
       });
-      localStorage.setItem(doneKey, "1");
+      if (milestoneDoneKey) localStorage.setItem(milestoneDoneKey, "1");
       setVisible(false);
       onSubmitted?.();
     } catch (_) {
       // Do not break assessment flow on failure.
-      localStorage.setItem(doneKey, "1");
+      if (milestoneDoneKey) localStorage.setItem(milestoneDoneKey, "1");
       setVisible(false);
     } finally {
       setSubmitting(false);

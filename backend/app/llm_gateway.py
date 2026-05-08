@@ -72,6 +72,32 @@ def _infer_scene_metadata(options, time_limit_sec, turn):
     }
 
 
+def _sentence_count(text: str) -> int:
+    if not text:
+        return 0
+    parts = [p.strip() for p in text.replace("\n", " ").split(".") if p.strip()]
+    return len(parts)
+
+
+def _ensure_scene_sentence_window(text: str, min_sentences: int = 4, max_sentences: int = 5) -> str:
+    base = (text or "").strip()
+    if not base:
+        base = "You are in a decision point with competing priorities."
+    sentences = [p.strip() for p in base.replace("\n", " ").split(".") if p.strip()]
+    if len(sentences) > max_sentences:
+        sentences = sentences[:max_sentences]
+    while len(sentences) < min_sentences:
+        if len(sentences) == 1:
+            sentences.append("You need to weigh tradeoffs with limited time.")
+        elif len(sentences) == 2:
+            sentences.append("Different stakeholders expect different outcomes.")
+        elif len(sentences) == 3:
+            sentences.append("Your choice will influence what happens next.")
+        else:
+            sentences.append("Consider both immediate impact and longer-term consequences.")
+    return ". ".join(sentences) + "."
+
+
 class LLMGateway:
     def generate_scene(self, session, history, turn, policy=None, pack=None, context_bundle=None):
         policy = policy or self.fallback_policy(session, turn, pack)
@@ -201,7 +227,19 @@ class LLMGateway:
         target = policy.get("target_construct", "social")
         context_bundle = context_bundle or {}
         frag_candidates = context_bundle.get("retrieved_fragments") or []
-        frag = frag_candidates[0]["text"] if frag_candidates else "A time-sensitive issue emerges and stakeholders expect action."
+        frag = (
+            frag_candidates[0]["text"]
+            if frag_candidates
+            else "A time-sensitive issue emerges and stakeholders expect action."
+        )
+        scene_body = _ensure_scene_sentence_window(
+            (
+                f"{frag} "
+                "You have partial information and need to make a practical choice now. "
+                "People around you are looking for a clear signal on what to do next. "
+                "The path you choose will shape both trust and outcomes for the next step."
+            )
+        )
         title = f"{scenario.title()} Decision Point {turn}"
         avoid = " ".join(context_bundle.get("avoid_repetition", []))
         if "previous scene title" in avoid.lower():
@@ -227,7 +265,7 @@ class LLMGateway:
             options.append({"id": oid, "text": text, "traits": traits, "construct_tags": [target]})
         return {
             "title": title,
-            "scene": frag,
+            "scene": scene_body,
             "time_limit_sec": int(policy.get("time_limit_sec", 45)),
             "options": options,
             "scene_metadata": {
@@ -349,9 +387,11 @@ class LLMGateway:
             "session_id": session_id,
             "turn": turn,
             "title": data.get("title", f"Decision Point {turn}") if isinstance(data, dict) else f"Decision Point {turn}",
-            "scene": data.get("scene", "You face a choice with competing priorities.")
-            if isinstance(data, dict)
-            else "You face a choice with competing priorities.",
+            "scene": _ensure_scene_sentence_window(
+                data.get("scene", "You face a choice with competing priorities.")
+                if isinstance(data, dict)
+                else "You face a choice with competing priorities."
+            ),
             "time_limit_sec": time_limit_sec,
             "options": normalized_opts,
             "scene_metadata": scene_metadata,

@@ -23,7 +23,6 @@ class CircuitSnapshot:
 
 
 class ProviderCircuitBreaker:
-    # TODO: move circuit state to shared Redis for multi-instance deployments.
     def __init__(self, settings):
         self.settings = settings
         self._state = {}
