@@ -88,7 +88,6 @@ export default function ReportViewer() {
   const penList = Array.isArray(report.pen) ? report.pen : [];
   const choices = Array.isArray(report.choices) ? report.choices : [];
   const evidenceCards = Array.isArray(report.evidence_cards) ? report.evidence_cards : [];
-  const benchmarkComparisons = Array.isArray(report.benchmark_comparisons) ? report.benchmark_comparisons : [];
   const interpretation = report.interpretation && typeof report.interpretation === "object" ? report.interpretation : {};
   const traitBuckets = Array.isArray(interpretation.trait_buckets) ? interpretation.trait_buckets : [];
   const keySignals = compactLabelList(traitBuckets);
@@ -147,9 +146,9 @@ export default function ReportViewer() {
         </p>
       </div>
 
-      {/* B. Friendly Interpretation */}
+      {/* B. Insights Summary */}
       <div className="card">
-        <h3>Friendly Interpretation</h3>
+        <h3>Insights Summary</h3>
         {interpretation.decision_style != null && interpretation.decision_style !== "" && (
           <p>
             <strong>Decision Style:</strong> {interpretation.decision_style}
@@ -216,46 +215,20 @@ export default function ReportViewer() {
                 {card.feature_name} - {formatScore(card.score)} <span className="bucket-pill">{card.bucket}</span>
               </summary>
               <p className="muted small">{card.label}</p>
+              <p className="muted small">
+                {`Reference band: ${Number(card.low_threshold ?? card.reference_low ?? 35)}–${Number(card.high_threshold ?? card.reference_high ?? 65)}. Internal reference only; not a clinical, population, or hiring norm.`}
+              </p>
               <ul className="evidence-list">
                 {(Array.isArray(card.evidence) ? card.evidence : []).map((e, idx) => (
                   <li key={`${card.feature_key}-${idx}`}>{e}</li>
                 ))}
               </ul>
-              {import.meta.env.DEV && (
-                <p className="muted small">sources: {(card.source_choice_ids || []).join(", ") || "none"}</p>
-              )}
             </details>
           ))}
         </div>
       )}
 
-      {/* F. Benchmark Comparisons */}
-      {benchmarkComparisons.length > 0 && (
-        <div className="card">
-          <h3>Your Score vs Reference Baseline</h3>
-          <p className="muted small">
-            Internal reference band only. Not a clinical, population, or hiring benchmark.
-          </p>
-          <div className="benchmark-list">
-            {benchmarkComparisons.map((item) => (
-              <div key={item.feature_key || item.metric_name} className="benchmark-item">
-                <div>
-                  <p className="benchmark-title">{item.metric_name}</p>
-                  <p className="muted small">
-                    Reference band: {item.low_threshold}-{item.high_threshold}
-                  </p>
-                </div>
-                <div className="benchmark-right">
-                  <strong>{Math.round(Number(item.score) || 0)}</strong>
-                  <span className="benchmark-band">{item.band}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* G. PEN Proxies radar chart */}
+      {/* F. PEN Proxies radar chart */}
       <div className="card">
         <h3>PEN Proxies</h3>
         <p className="muted small report-section-note">
@@ -275,7 +248,7 @@ export default function ReportViewer() {
         )}
       </div>
 
-      {/* H. Per-feature detail grid */}
+      {/* G. Per-feature detail grid */}
       {features.length > 0 && (
         <div className="grid">
           {features.map((f) => {
@@ -284,29 +257,32 @@ export default function ReportViewer() {
               <div key={f.key || f.name} className="card">
                 <h4>{f.name}</h4>
                 <strong>{formatScore(f.score)}</strong>
-                {f.label != null && f.label !== "" && <p className="muted small">Label: {f.label}</p>}
-                {f.confidence_low != null && f.confidence_high != null && (
+                
+                {/* {f.label != null && f.label !== "" && <p className="muted small">Label: {f.label}</p>} */}
+                {/* {f.confidence_low != null && f.confidence_high != null && (
                   <p className="confidence-range">
                     Confidence band: {formatScore(f.confidence_low)} – {formatScore(f.confidence_high)}
                   </p>
-                )}
-                {meta ? <p className="muted small feature-meta">{meta}</p> : null}
+                )} */}
+                {/* {meta ? <p className="muted small feature-meta">{meta}</p> : null} */}
+
                 {f.description != null && f.description !== "" && <p>{f.description}</p>}
               </div>
             );
           })}
         </div>
-      )}
+      )} 
+      
 
-      {/* I. PDF download */}
+      {/* H. PDF download */}
       <button type="button" onClick={onDownloadPdf} disabled={downloading}>
         {downloading ? "Preparing PDF..." : "Download PDF"}
       </button>
 
-      {/* J. FeedbackCard */}
+      {/* I. FeedbackCard */}
       <FeedbackCard sessionId={sessionId} reportId={report.session_id || sessionId} />
 
-      {/* K. Back to dashboard */}
+      {/* J. Back to dashboard */}
       <Link className="button-link" to="/dashboard">
         Back to dashboard
       </Link>
