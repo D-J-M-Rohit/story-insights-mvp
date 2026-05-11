@@ -5,6 +5,63 @@ import { downloadReportPdf, getReport } from "../api";
 import { SessionContext } from "../App";
 import FeedbackCard from "./FeedbackCard";
 
+function formatDate(value) {
+  if (value == null || value === "") return "-";
+  try {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+function formatDuration(ms) {
+  if (ms == null || Number.isNaN(Number(ms))) return "-";
+  const sec = Number(ms) / 1000;
+  return `${sec.toFixed(1)} sec`;
+}
+
+function formatScore(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (Number.isNaN(n)) return String(value);
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function compactLabelList(traitBuckets) {
+  if (!Array.isArray(traitBuckets) || traitBuckets.length === 0) return "";
+  const labels = traitBuckets
+    .map((tb) => (tb && typeof tb.label === "string" ? tb.label.trim() : ""))
+    .filter(Boolean);
+  const unique = [...new Set(labels)];
+  const limited = unique.slice(0, 6);
+  return limited.join(" · ");
+}
+
+function featureMetaLine(f) {
+  const parts = [];
+  if (f.raw_score != null) parts.push(`Raw: ${formatScore(f.raw_score)}`);
+  if (f.evidence_count != null) parts.push(`Evidence: ${f.evidence_count}`);
+  if (f.interpretation_status != null && String(f.interpretation_status).trim() !== "") {
+    parts.push(String(f.interpretation_status));
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Remove product-phase wording if present in API copy (e.g. cached reports). */
+function stripMvpFromCopy(text) {
+  if (text == null || typeof text !== "string") return "";
+  return text
+    .replace(/\bMVP\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+}
+
+const REPORT_DISCLAIMER_FALLBACK =
+  "This report is experimental and should not be treated as a clinical, hiring, or diagnostic assessment. " +
+  "Scores are descriptive signals from a short branching-story session and should be interpreted with the evidence count and confidence band.";
+
 export default function ReportViewer() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -27,13 +84,21 @@ export default function ReportViewer() {
   if (error) return <div className="page center error">{error}</div>;
   if (!report) return <div className="page center">Loading report...</div>;
 
-  const penData = report.pen.map((p) => ({
-    metric: p.key ? p.key.replace(/_proxy$/, "") : p.name.split("/")[0].trim(),
+  const features = Array.isArray(report.features) ? report.features : [];
+  const penList = Array.isArray(report.pen) ? report.pen : [];
+  const choices = Array.isArray(report.choices) ? report.choices : [];
+  const evidenceCards = Array.isArray(report.evidence_cards) ? report.evidence_cards : [];
+  const benchmarkComparisons = Array.isArray(report.benchmark_comparisons) ? report.benchmark_comparisons : [];
+  const interpretation = report.interpretation && typeof report.interpretation === "object" ? report.interpretation : {};
+  const traitBuckets = Array.isArray(interpretation.trait_buckets) ? interpretation.trait_buckets : [];
+  const keySignals = compactLabelList(traitBuckets);
+
+  const penData = penList.map((p) => ({
+    metric: p.key ? p.key.replace(/_proxy$/, "") : (p.name || "").split("/")[0].trim() || "—",
     score: p.score,
   }));
-  const interpretation = report.interpretation || {};
-  const durationSec = report.duration_ms != null ? (Number(report.duration_ms) / 1000).toFixed(1) : null;
-  const coverage = (report.choices || []).reduce((acc, choice) => {
+
+  const coverage = choices.reduce((acc, choice) => {
     const target = choice?.scene_metadata?.target_construct;
     if (target) acc[target] = (acc[target] || 0) + 1;
     return acc;
@@ -61,45 +126,58 @@ export default function ReportViewer() {
       <div className="row-between">
         <h2>Report</h2>
         <div>
-          <button className="inline-btn" onClick={() => navigate("/dashboard")}>
+          <button type="button" className="inline-btn" onClick={() => navigate("/dashboard")}>
             Dashboard
           </button>
-          <button className="inline-btn" onClick={logout}>
+          <button type="button" className="inline-btn" onClick={logout}>
             Logout
           </button>
         </div>
       </div>
+
+      {/* A. Header / report metadata */}
       <div className="card">
         <h2>Behavioral Insight Report</h2>
-        <p className="muted">{report.scenario}</p>
-        <p className="muted small">Started: {report.started_at || "-"}</p>
-        <p className="muted small">Completed: {report.completed_at || "-"}</p>
-        <p className="muted small">Duration: {durationSec != null ? `${durationSec} sec` : "-"}</p>
+        <p className="muted">{report.scenario != null ? report.scenario : "—"}</p>
+        <p className="muted small">Started: {formatDate(report.started_at)}</p>
+        <p className="muted small">Completed: {formatDate(report.completed_at)}</p>
+        <p className="muted small">Duration: {formatDuration(report.duration_ms)}</p>
         <p className="muted">
-          Experimental reflection only. This is not a clinical, diagnostic, or hiring assessment.
+          {stripMvpFromCopy(report.summary) || REPORT_DISCLAIMER_FALLBACK}
         </p>
-        <p className="confidence-note">
-          Scores are experimental and based on a short interactive session. Ranges show estimated uncertainty from evidence count and telemetry completeness.
-        </p>
-        <p>{report.summary}</p>
       </div>
+
+      {/* B. Friendly Interpretation */}
       <div className="card">
         <h3>Friendly Interpretation</h3>
-        <p><strong>Decision Style:</strong> {interpretation.decision_style}</p>
-        <p><strong>Strengths in this setting:</strong> {interpretation.strengths}</p>
-        <p><strong>Possible Growth Area:</strong> {interpretation.growth_areas}</p>
-        <p><strong>Setting-Specific Summary:</strong> {interpretation.setting_specific_summary}</p>
+        {interpretation.decision_style != null && interpretation.decision_style !== "" && (
+          <p>
+            <strong>Decision Style:</strong> {interpretation.decision_style}
+          </p>
+        )}
+        {interpretation.strengths != null && interpretation.strengths !== "" && (
+          <p>
+            <strong>Strengths in this setting:</strong> {interpretation.strengths}
+          </p>
+        )}
+        {interpretation.growth_areas != null && interpretation.growth_areas !== "" && (
+          <p>
+            <strong>Possible Growth Area:</strong> {interpretation.growth_areas}
+          </p>
+        )}
+        {interpretation.setting_specific_summary != null && interpretation.setting_specific_summary !== "" && (
+          <p>
+            <strong>Setting-Specific Summary:</strong> {interpretation.setting_specific_summary}
+          </p>
+        )}
+        {keySignals ? (
+          <p className="muted small compact-signals">
+            <strong>Key signals:</strong> {keySignals}
+          </p>
+        ) : null}
       </div>
-      <div className="grid">
-        {(interpretation.trait_buckets || []).map((tb) => (
-          <div key={tb.key} className="card">
-            <h4>{tb.key}</h4>
-            <strong>{tb.score}</strong>
-            <p>{tb.label}</p>
-            <p className="muted small">{tb.bucket}</p>
-          </div>
-        ))}
-      </div>
+
+      {/* C. Construct Coverage */}
       {Object.keys(coverage).length > 0 && (
         <div className="card">
           <h3>Construct Coverage</h3>
@@ -111,31 +189,35 @@ export default function ReportViewer() {
         </div>
       )}
 
-      <div className="card">
-        <h3>Technical Feature Scores</h3>
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={report.features}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="key" hide />
-            <YAxis domain={[0, 100]} />
-            <Tooltip />
-            <Bar dataKey="score" fill="#4f46e5" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* D. Technical Feature Scores */}
+      {features.length > 0 && (
+        <div className="card">
+          <h3>Technical Feature Scores</h3>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={features}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="key" hide />
+              <YAxis domain={[0, 100]} />
+              <Tooltip />
+              <Bar dataKey="score" fill="#4f46e5" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
-      {(report.evidence_cards || []).length > 0 && (
+      {/* E. Why this score? evidence cards */}
+      {evidenceCards.length > 0 && (
         <div className="card">
           <h3>Why this score?</h3>
-          {import.meta.env.DEV && <p className="muted small">Evidence cards: {report.evidence_cards.length}</p>}
-          {(report.evidence_cards || []).map((card) => (
-            <details key={card.feature_key} className="evidence-card">
+          {import.meta.env.DEV && <p className="muted small">Evidence cards: {evidenceCards.length}</p>}
+          {evidenceCards.map((card) => (
+            <details key={card.feature_key || card.feature_name} className="evidence-card">
               <summary>
-                {card.feature_name} - {card.score} <span className="bucket-pill">{card.bucket}</span>
+                {card.feature_name} - {formatScore(card.score)} <span className="bucket-pill">{card.bucket}</span>
               </summary>
               <p className="muted small">{card.label}</p>
               <ul className="evidence-list">
-                {(card.evidence || []).map((e, idx) => (
+                {(Array.isArray(card.evidence) ? card.evidence : []).map((e, idx) => (
                   <li key={`${card.feature_key}-${idx}`}>{e}</li>
                 ))}
               </ul>
@@ -147,21 +229,24 @@ export default function ReportViewer() {
         </div>
       )}
 
-      {(report.benchmark_comparisons || []).length > 0 && (
+      {/* F. Benchmark Comparisons */}
+      {benchmarkComparisons.length > 0 && (
         <div className="card">
           <h3>Your Score vs Reference Baseline</h3>
           <p className="muted small">
             Internal reference band only. Not a clinical, population, or hiring benchmark.
           </p>
           <div className="benchmark-list">
-            {report.benchmark_comparisons.map((item) => (
-              <div key={item.feature_key} className="benchmark-item">
+            {benchmarkComparisons.map((item) => (
+              <div key={item.feature_key || item.metric_name} className="benchmark-item">
                 <div>
                   <p className="benchmark-title">{item.metric_name}</p>
-                  <p className="muted small">Reference band: {item.low_threshold}-{item.high_threshold}</p>
+                  <p className="muted small">
+                    Reference band: {item.low_threshold}-{item.high_threshold}
+                  </p>
                 </div>
                 <div className="benchmark-right">
-                  <strong>{Math.round(item.score)}</strong>
+                  <strong>{Math.round(Number(item.score) || 0)}</strong>
                   <span className="benchmark-band">{item.band}</span>
                 </div>
               </div>
@@ -170,53 +255,61 @@ export default function ReportViewer() {
         </div>
       )}
 
+      {/* G. PEN Proxies radar chart */}
       <div className="card">
         <h3>PEN Proxies</h3>
-        <ResponsiveContainer width="100%" height={320}>
-          <RadarChart data={penData}>
-            <PolarGrid />
-            <PolarAngleAxis dataKey="metric" />
-            <Tooltip />
-            <Radar dataKey="score" stroke="#0f766e" fill="#14b8a6" fillOpacity={0.5} />
-          </RadarChart>
-        </ResponsiveContainer>
+        <p className="muted small report-section-note">
+          These are experimental proxy signals, not clinical personality scores.
+        </p>
+        {penData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={320}>
+            <RadarChart data={penData}>
+              <PolarGrid />
+              <PolarAngleAxis dataKey="metric" />
+              <Tooltip />
+              <Radar dataKey="score" stroke="#0f766e" fill="#14b8a6" fillOpacity={0.5} />
+            </RadarChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="muted small">No PEN proxy data in this report.</p>
+        )}
       </div>
 
-      <div className="grid">
-        {report.features.map((f) => (
-          <div key={f.key} className="card">
-            <h4>{f.name}</h4>
-            <strong>{f.score}</strong>
-            {f.label && <p className="muted small">Label: {f.label}</p>}
-            {f.confidence && (
-              <>
-                <p className="confidence-range">
-                  Estimated range: {Math.round(f.confidence.low)}-{Math.round(f.confidence.high)}
-                </p>
-                <p className="muted small">
-                  Confidence: <span className="confidence-pill">{f.confidence.level}</span> · Evidence: {f.confidence.evidence_count} decisions
-                </p>
-              </>
-            )}
-            {f.raw_score != null && (
-              <p className="muted small">
-                Raw: {f.raw_score} · Evidence: {f.evidence_count} · {f.interpretation_status}
-              </p>
-            )}
-            {f.confidence_low != null && f.confidence_high != null && (
-              <p className="muted small">
-                Confidence band: {f.confidence_low} – {f.confidence_high}
-              </p>
-            )}
-            <p>{f.description}</p>
-          </div>
-        ))}
-      </div>
-      <button onClick={onDownloadPdf} disabled={downloading}>
+      {/* H. Per-feature detail grid */}
+      {features.length > 0 && (
+        <div className="grid">
+          {features.map((f) => {
+            const meta = featureMetaLine(f);
+            return (
+              <div key={f.key || f.name} className="card">
+                <h4>{f.name}</h4>
+                <strong>{formatScore(f.score)}</strong>
+                {f.label != null && f.label !== "" && <p className="muted small">Label: {f.label}</p>}
+                {f.confidence_low != null && f.confidence_high != null && (
+                  <p className="confidence-range">
+                    Confidence band: {formatScore(f.confidence_low)} – {formatScore(f.confidence_high)}
+                  </p>
+                )}
+                {meta ? <p className="muted small feature-meta">{meta}</p> : null}
+                {f.description != null && f.description !== "" && <p>{f.description}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* I. PDF download */}
+      <button type="button" onClick={onDownloadPdf} disabled={downloading}>
         {downloading ? "Preparing PDF..." : "Download PDF"}
       </button>
+
+      {/* J. FeedbackCard */}
       <FeedbackCard sessionId={sessionId} reportId={report.session_id || sessionId} />
-      <Link className="button-link" to="/dashboard">Back to dashboard</Link>
+
+      {/* K. Back to dashboard */}
+      <Link className="button-link" to="/dashboard">
+        Back to dashboard
+      </Link>
     </div>
   );
 }

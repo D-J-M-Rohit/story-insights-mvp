@@ -343,3 +343,17 @@ button:disabled {
   color: #5b21b6;
   font-size: 0.8rem;
 }
+
+.compact-signals {
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.report-section-note {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+.feature-meta {
+  margin: 6px 0 0;
+}

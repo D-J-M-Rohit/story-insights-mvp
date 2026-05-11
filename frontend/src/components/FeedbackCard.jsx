@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { submitFeedback } from "../api";
 
-const TAGS = ["helpful", "confusing", "too_generic", "repetitive", "uncomfortable", "bug_report"];
+const TAGS = ["helpful", "confusing", "too_generic", "repetitive", "uncomfortable", "bug report"];
 
 export default function FeedbackCard({ sessionId, reportId, onSubmitted }) {
   const [ratingUseful, setRatingUseful] = useState(null);
