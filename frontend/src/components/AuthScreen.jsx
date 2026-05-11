@@ -31,7 +31,7 @@ export default function AuthScreen() {
   return (
     <div className="page center">
       <div className="card auth-card">
-        <h1>Story Insights MVP</h1>
+        <h1>Story Insights</h1>
         <p className="muted">Sign in to continue your sessions and reports.</p>
         <form onSubmit={onSubmit}>
           <label>

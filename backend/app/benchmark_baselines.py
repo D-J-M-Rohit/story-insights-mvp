@@ -1,4 +1,4 @@
-MVP_BASELINES = {
+REFERENCE_BASELINES = {
     "cdi": {"label": "Conflict / deliberation", "baseline_mid": 50, "low_threshold": 35, "high_threshold": 65, "higher_is": "more deliberative or conflicted"},
     "adq": {"label": "Adaptability under pressure", "baseline_mid": 50, "low_threshold": 35, "high_threshold": 65, "higher_is": "more adaptive under pressure"},
     "risk_tolerance": {"label": "Risk style", "baseline_mid": 50, "low_threshold": 35, "high_threshold": 65, "higher_is": "more risk-tolerant"},
@@ -11,15 +11,15 @@ MVP_BASELINES = {
     "psychoticism_proxy": {"label": "Psychoticism proxy", "baseline_mid": 50, "low_threshold": 35, "high_threshold": 65, "higher_is": "more bold or lower-empathy in selected choices"},
 }
 
-DISCLAIMER = "Compared against an internal MVP reference band only. This is not a clinical, population, or hiring norm."
+DISCLAIMER = "Compared against an internal reference band only. This is not a clinical, population, or hiring norm."
 
 
 def comparison_band(score: float, low_threshold: float = 35, high_threshold: float = 65) -> str:
     if score < low_threshold:
-        return "below MVP reference band"
+        return "below reference band"
     if score >= high_threshold:
-        return "above MVP reference band"
-    return "within MVP reference band"
+        return "above reference band"
+    return "within reference band"
 
 
 def attach_benchmark_comparisons(report: dict) -> dict:
@@ -27,9 +27,9 @@ def attach_benchmark_comparisons(report: dict) -> dict:
     out = []
     for feature in features:
         key = feature.get("key")
-        if key not in MVP_BASELINES:
+        if key not in REFERENCE_BASELINES:
             continue
-        baseline = MVP_BASELINES[key]
+        baseline = REFERENCE_BASELINES[key]
         score = float(feature.get("score", 0))
         out.append(
             {

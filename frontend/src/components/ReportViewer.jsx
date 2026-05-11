@@ -149,9 +149,9 @@ export default function ReportViewer() {
 
       {(report.benchmark_comparisons || []).length > 0 && (
         <div className="card">
-          <h3>Your Score vs MVP Baseline</h3>
+          <h3>Your Score vs Reference Baseline</h3>
           <p className="muted small">
-            Internal MVP reference band only. Not a clinical, population, or hiring benchmark.
+            Internal reference band only. Not a clinical, population, or hiring benchmark.
           </p>
           <div className="benchmark-list">
             {report.benchmark_comparisons.map((item) => (

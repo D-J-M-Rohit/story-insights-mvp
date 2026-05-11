@@ -125,7 +125,7 @@ from .store import (
     set_active_faiss_index,
 )
 
-app = FastAPI(title="Story Insights MVP")
+app = FastAPI(title="Story Insights")
 gateway = LLMGateway()
 configure_logging()
 circuit_breaker = get_provider_circuit_breaker(settings)

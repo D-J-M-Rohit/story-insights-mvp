@@ -70,8 +70,8 @@ def build_report_pdf(report: dict) -> BytesIO:
                 pdf.drawString(x3, draw_y, label_lines[idx])
         y -= row_height
 
-    pdf.setTitle("Story Insights MVP Report")
-    line("Story Insights MVP Report", "Helvetica-Bold", 16, 22)
+    pdf.setTitle("Story Insights Report")
+    line("Story Insights Report", "Helvetica-Bold", 16, 22)
     line(f"Session ID: {report.get('session_id', '-')}")
     line(f"Scenario: {report.get('scenario', '-')}")
     line(f"Started: {report.get('started_at', '-')}")
@@ -117,24 +117,24 @@ def build_report_pdf(report: dict) -> BytesIO:
 
     comparisons = report.get("benchmark_comparisons") or []
     if comparisons:
-        line("MVP Baseline Comparison", "Helvetica-Bold", 13, 18)
+        line("Baseline Comparison", "Helvetica-Bold", 13, 18)
         for comp in comparisons[:8]:
             line(
                 f"{comp.get('metric_name', comp.get('feature_key'))}: {int(comp.get('score', 0))} "
-                f"({comp.get('band', 'within MVP reference band')})",
+                f"({comp.get('band', 'within reference band')})",
                 size=10,
                 gap=14,
             )
             line(f"Reference band: {comp.get('low_threshold', 35)}-{comp.get('high_threshold', 65)}", size=9, gap=12)
         line(
-            "Compared against an internal MVP reference band only. "
+            "Compared against an internal reference band only. "
             "This is not a clinical, population, or hiring norm.",
             size=9,
             gap=14,
         )
 
     line(
-        "Confidence bands are exploratory MVP estimates based on evidence count and telemetry completeness. "
+        "Confidence bands are exploratory estimates based on evidence count and telemetry completeness. "
         "They are not validated clinical or hiring intervals.",
         size=9,
     )

@@ -85,7 +85,7 @@ def confidence_band(score: float, evidence_count: int, completed_count: int, exp
         "confidence_low": round(low, 2),
         "confidence_high": round(high, 2),
         "confidence_margin": round(margin, 2),
-        "confidence_method": "mvp_evidence_weighted_v1",
+        "confidence_method": "evidence_weighted_v1",
         "evidence_count": int(evidence_count),
         "confidence_note": "Short-session estimate; treat as directional, not diagnostic.",
     }

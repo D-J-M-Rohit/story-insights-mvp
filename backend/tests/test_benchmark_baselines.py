@@ -2,9 +2,9 @@ from app.benchmark_baselines import attach_benchmark_comparisons, comparison_ban
 
 
 def test_comparison_band_classification():
-    assert comparison_band(20) == "below MVP reference band"
-    assert comparison_band(50) == "within MVP reference band"
-    assert comparison_band(80) == "above MVP reference band"
+    assert comparison_band(20) == "below reference band"
+    assert comparison_band(50) == "within reference band"
+    assert comparison_band(80) == "above reference band"
 
 
 def test_attach_benchmark_comparisons_adds_known_features_only():
@@ -18,4 +18,4 @@ def test_attach_benchmark_comparisons_adds_known_features_only():
     comparisons = out.get("benchmark_comparisons", [])
     assert len(comparisons) == 1
     assert comparisons[0]["feature_key"] == "cdi"
-    assert comparisons[0]["band"] == "within MVP reference band"
+    assert comparisons[0]["band"] == "within reference band"

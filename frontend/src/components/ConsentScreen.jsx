@@ -30,7 +30,7 @@ export default function ConsentScreen() {
   return (
     <div className="page center">
       <div className="card">
-        <h1>Story Insights MVP</h1>
+        <h1>Story Insights</h1>
         <p>
           Story Insights is an experimental reflection tool. It is not clinical advice, diagnosis, or a hiring assessment.
         </p>

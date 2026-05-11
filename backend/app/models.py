@@ -190,7 +190,7 @@ class DerivedFeature(Base):
     confidence_low: Mapped[float] = mapped_column(Float, nullable=False)
     confidence_high: Mapped[float] = mapped_column(Float, nullable=False)
     confidence_margin: Mapped[float] = mapped_column(Float, nullable=False)
-    confidence_method: Mapped[str] = mapped_column(String, default="mvp_evidence_weighted_v1", nullable=False)
+    confidence_method: Mapped[str] = mapped_column(String, default="evidence_weighted_v1", nullable=False)
     evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     components_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source_choice_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)

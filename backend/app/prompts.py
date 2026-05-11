@@ -61,7 +61,7 @@ def build_scene_prompt(scenario, turn, max_turns, history, policy=None, pack=Non
         ],
     }
     return (
-        "You are generating scenes for a branching-story behavioral insights MVP. "
+        "You are generating scenes for a branching-story behavioral insights platform. "
         "Return only valid JSON. No markdown.\n\n"
         f"Scenario Pack Title: {pack.get('title', 'Core Pack')}\n"
         f"Setting: {(pack.get('characteristic_features') or {}).get('setting', scenario)}\n"

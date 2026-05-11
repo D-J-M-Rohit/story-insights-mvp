@@ -1,6 +1,6 @@
-# Story Insights MVP
+# Story Insights
 
-Production-style MVP for branching story insights with:
+Production-style platform for branching story insights with:
 - JWT auth + persistent user sessions
 - PostgreSQL-backed storage (local or cloud)
 - Deterministic backend scoring
@@ -63,7 +63,7 @@ npm run dev
 ### Micro-feedback idempotency
 
 - In-session micro-feedback is limited server-side to **one stored event per user, session, and turn**; repeats return `{"status": "duplicate_ignored", "existing_id": "..."}` without a second row.
-- An optional `Idempotency-Key` header deduplicates feedback POSTs per user (in-memory, MVP).
+- An optional `Idempotency-Key` header deduplicates feedback POSTs per user (in-memory).
 
 ### Auth response modes
 
@@ -214,7 +214,7 @@ Privacy notes:
 ## Derived Features, Confidence Bands, and Rate Limiting
 
 - `DerivedFeatures` exists because storing metrics only in `report_json` limits auditability. Per-metric rows preserve score, evidence, confidence metadata, and scorer version for reconstruction.
-- Confidence bands are exploratory MVP estimates for short sessions (often around 5 turns). UI language uses estimated range / directional confidence, not validated clinical intervals.
+- Confidence bands are exploratory estimates for short sessions (often around 5 turns). UI language uses estimated range / directional confidence, not validated clinical intervals.
 - Rate limiting is applied to expensive routes:
   - `/api/v1/scenes/next`: 10 requests/sec, burst 20
   - `/api/v1/reports/*`: 3 requests/sec, burst 6
@@ -229,13 +229,13 @@ Additional endpoints:
 
 ## Testing, Provider Health, Metrics, and Privacy-Preserving Logs
 
-- Backend tests are necessary because this MVP combines auth, scene generation, telemetry, deterministic scoring, and report pipelines; one successful UI run does not validate scoring/report correctness.
+- Backend tests are necessary because this platform combines auth, scene generation, telemetry, deterministic scoring, and report pipelines; one successful UI run does not validate scoring/report correctness.
 - `pytest` + FastAPI `TestClient` are used for backend tests, and `pytest monkeypatch` is used to force mock provider behavior and test env overrides.
 - Provider health endpoints exist because `mock`, `openai`, and `gemini` are interchangeable behind the gateway; ops needs a quick view of active provider, fallback rate, and latency quality.
-- Metrics exist because averages hide long-tail slowness. The MVP now emits Prometheus-compatible counters/histograms for request/error rates and latency distributions.
+- Metrics exist because averages hide long-tail slowness. The platform now emits Prometheus-compatible counters/histograms for request/error rates and latency distributions.
 - Structured JSON logs are privacy-preserving operational metadata only: route/method/status/timing/request_id/trace_id/provider/error metadata; no passwords, tokens, API keys, raw emails, prompts, scene bodies, report bodies, or full telemetry payloads.
 - W3C-style `traceparent` is parsed when present. Correlation headers are emitted as `X-Request-ID` and `traceparent`.
-- This MVP does not include a full OpenTelemetry collector, Grafana dashboards, or SIEM plumbing yet; those are future production steps.
+- This project does not include a full OpenTelemetry collector, Grafana dashboards, or SIEM plumbing yet; those are future production steps.
 
 Run backend tests:
 
@@ -289,19 +289,19 @@ Future production direction:
 
 ## Analysis NLP Service
 
-- MVP includes a lightweight deterministic analysis service for feedback/comment text.
+- The platform includes a lightweight deterministic analysis service for feedback/comment text.
 - It performs:
   - text normalization and preprocessing
   - NER-style PII redaction with regex/rule patterns
   - controlled topic tagging from comment text and tags
   - optional sentiment labeling for product-experience feedback
 - It does not call OpenAI/Gemini or any external LLM.
-- It does not use heavy NLP model pipelines in this MVP.
+- It does not use heavy NLP model pipelines in this implementation.
 - It does not affect scoring, CDI, ADQ, PEN proxies, confidence bands, or benchmark comparisons.
 - Sentiment/topic outputs are UX/quality signals only and are not clinical, diagnostic, or hiring conclusions.
 
 Architecture note:
-- In the MVP implementation, the Analysis and Reports layer focuses on telemetry normalization, deterministic scoring, evidence mapping, benchmark comparison, report interpretation, and lightweight feedback/comment analysis.
+- In this implementation, the Analysis and Reports layer focuses on telemetry normalization, deterministic scoring, evidence mapping, benchmark comparison, report interpretation, and lightweight feedback/comment analysis.
 - Standalone advanced sentiment, named-entity recognition, and topic modeling remain future extensions and are not core scoring inputs.
 
 Endpoints:
@@ -428,4 +428,4 @@ Security notes:
 - secrets are not logged
 
 Future migration note:
-- pgvector, Weaviate, Pinecone, Redis queues, and Kubernetes remain future options and are not part of this MVP.
+- pgvector, Weaviate, Pinecone, Redis queues, and Kubernetes remain future options and are not part of this implementation.

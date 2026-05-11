@@ -1,1 +1,1 @@
-# Story Insights MVP backend package.
+# Story Insights backend package.

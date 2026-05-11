@@ -88,7 +88,7 @@ def shrunk_0_100(raw_0_1, evidence_count, prior=0.50, prior_strength=4.0):
 
 def confidence_band(score, evidence_count):
     """
-    Simple MVP confidence band.
+    Simple confidence band.
     This is not a validated psychometric standard error.
     It only communicates that fewer scenes means lower confidence.
     """
@@ -137,7 +137,7 @@ def get_telemetry(choice):
 
 def get_scene_meta(choice):
     """
-    Supports multiple possible names so the scorer works with your current MVP
+    Supports multiple possible names so the scorer works with your current schema
     and future richer schemas.
     """
     return (
@@ -558,7 +558,7 @@ def score_session(session, choices):
 
         return {
             "session_id": session.get("id"),
-            "summary": "This MVP report is experimental and should not be treated as a clinical, hiring, or diagnostic assessment.",
+            "summary": "This report is experimental and should not be treated as a clinical, hiring, or diagnostic assessment.",
             "features": empty_features,
             "pen": [
                 {"name": "Risk / Low-Empathy Signal", "score": 50.0},
@@ -761,7 +761,7 @@ def score_session(session, choices):
     ]
 
     summary = (
-        "This MVP report is experimental and should not be treated as a clinical, hiring, "
+        "This report is experimental and should not be treated as a clinical, hiring, "
         "or diagnostic assessment. Scores are descriptive signals from a short branching-story "
         "session and should be interpreted with the evidence count and confidence band."
     )

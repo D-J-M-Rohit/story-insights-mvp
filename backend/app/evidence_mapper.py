@@ -151,7 +151,7 @@ def build_derived_features(session: dict, report: dict, choices: list[dict]) -> 
                 "confidence_low": float(conf.get("low", 0.0)),
                 "confidence_high": float(conf.get("high", 100.0)),
                 "confidence_margin": float(conf.get("margin", 30.0)),
-                "confidence_method": conf.get("method", "mvp_evidence_weighted_v1"),
+                "confidence_method": conf.get("method", "evidence_weighted_v1"),
                 "evidence_json": {"evidence": card["evidence"], "components": card["components"], "disclaimer": card["disclaimer"]},
                 "components_json": card["components"],
                 "source_choice_ids": card.get("source_choice_ids", []),
