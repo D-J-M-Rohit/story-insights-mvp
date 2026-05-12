@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { submitFeedback } from "../api";
 
 function buildMilestones(maxTurns) {
@@ -78,31 +79,39 @@ export default function MicroFeedbackPrompt({ sessionId, sceneId, turn, maxTurns
   if (!enabled || !visible) return null;
 
   return (
-    <div className="card micro-feedback">
-      <p>How is the story pace so far?</p>
+    <div className="card micro-feedback micro-feedback-panel no-print" role="dialog" aria-label="Quick pacing feedback">
+      <div className="micro-feedback-header">
+        <span className="micro-feedback-title">Quick check-in</span>
+        <button type="button" className="micro-feedback-dismiss btn btn-ghost btn-sm" onClick={close} aria-label="Dismiss feedback prompt">
+          <X size={18} aria-hidden />
+        </button>
+      </div>
+      <p className="micro-feedback-label muted small" style={{ marginTop: 0 }}>
+        How is the story pace so far?
+      </p>
       <div className="feedback-actions">
-        <button type="button" className={`tag-chip ${pace === "too_fast" ? "selected" : ""}`} onClick={() => setPace("too_fast")}>
+        <button type="button" className={`tag-chip ${pace === "too_fast" ? "selected" : ""}`} onClick={() => setPace("too_fast")} aria-pressed={pace === "too_fast"}>
           Too fast
         </button>
-        <button type="button" className={`tag-chip ${pace === "about_right" ? "selected" : ""}`} onClick={() => setPace("about_right")}>
+        <button type="button" className={`tag-chip ${pace === "about_right" ? "selected" : ""}`} onClick={() => setPace("about_right")} aria-pressed={pace === "about_right"}>
           About right
         </button>
-        <button type="button" className={`tag-chip ${pace === "too_slow" ? "selected" : ""}`} onClick={() => setPace("too_slow")}>
+        <button type="button" className={`tag-chip ${pace === "too_slow" ? "selected" : ""}`} onClick={() => setPace("too_slow")} aria-pressed={pace === "too_slow"}>
           Too slow
         </button>
       </div>
-      <p>Story clarity?</p>
+      <p className="micro-feedback-label muted small">Story clarity?</p>
       <div className="feedback-actions">
-        <button type="button" className={`tag-chip ${clarity === "clear" ? "selected" : ""}`} onClick={() => setClarity("clear")}>
+        <button type="button" className={`tag-chip ${clarity === "clear" ? "selected" : ""}`} onClick={() => setClarity("clear")} aria-pressed={clarity === "clear"}>
           Clear
         </button>
-        <button type="button" className={`tag-chip ${clarity === "confusing" ? "selected" : ""}`} onClick={() => setClarity("confusing")}>
+        <button type="button" className={`tag-chip ${clarity === "confusing" ? "selected" : ""}`} onClick={() => setClarity("confusing")} aria-pressed={clarity === "confusing"}>
           Confusing
         </button>
       </div>
       <div className="feedback-actions">
         <button type="button" onClick={send} disabled={submitting}>
-          {submitting ? "Sending..." : "Send"}
+          {submitting ? "Sending…" : "Send"}
         </button>
         <button type="button" className="ghost-btn" onClick={close}>
           Skip

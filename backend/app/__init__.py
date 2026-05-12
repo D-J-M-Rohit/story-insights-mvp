@@ -1,1 +1,1 @@
-# Story Insights backend package.
+# Psychometric Insights backend package.

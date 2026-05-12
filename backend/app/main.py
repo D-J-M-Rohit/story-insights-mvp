@@ -125,7 +125,7 @@ from .store import (
     set_active_faiss_index,
 )
 
-app = FastAPI(title="Story Insights")
+app = FastAPI(title="Psychometric Insights")
 gateway = LLMGateway()
 configure_logging()
 circuit_breaker = get_provider_circuit_breaker(settings)
@@ -980,7 +980,7 @@ def report(session_id: str, current_user=Depends(get_current_user)):
 
 
 @app.get("/api/v1/reports/{session_id}/pdf")
-def report_pdf(session_id: str, current_user=Depends(get_current_user)):
+async def report_pdf(session_id: str, current_user=Depends(get_current_user)):
     started = perf_counter()
     set_request_context(user_hash=hash_identifier(current_user.get("id")), session_id=session_id)
     session = assert_session_owner(session_id, current_user["id"])
@@ -993,16 +993,26 @@ def report_pdf(session_id: str, current_user=Depends(get_current_user)):
         report_data["scenario"] = session.get("scenario")
         report_data["interpretation"] = generate_interpretation(report_data, session.get("scenario", "general"))
         save_report(session_id, report_data)
+    choices = list_choices(session_id)
+    report_data = attach_evidence_to_report(dict(report_data), choices, session=session)
     if settings.BENCHMARK_COMPARISONS_ENABLED:
         report_data = attach_benchmark_comparisons(report_data)
+    report_data["scenario"] = report_data.get("scenario") or session.get("scenario")
+    report_data["session_id"] = report_data.get("session_id") or session_id
     report_data["started_at"] = session.get("created_at")
     report_data["completed_at"] = session.get("completed_at")
     report_data["duration_ms"] = session.get("duration_ms")
+    report_data["interpretation"] = report_data.get("interpretation") or generate_interpretation(
+        report_data, report_data.get("scenario", "general")
+    )
     try:
-        pdf_buffer = build_report_pdf(report_data)
-    except Exception as exc:
+        pdf_buffer = await build_report_pdf(report_data)
+    except Exception:
         record_report_generation("error", perf_counter() - started)
-        raise HTTPException(status_code=500, detail="pdf_generation_failed") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="PDF generation is temporarily unavailable.",
+        ) from None
 
     if settings.OBJECT_ARCHIVE_ENABLED and settings.ARCHIVE_PDFS_ENABLED:
         try:
@@ -1010,7 +1020,7 @@ def report_pdf(session_id: str, current_user=Depends(get_current_user)):
         except Exception:
             pass
 
-    headers = {"Content-Disposition": f'attachment; filename="story-insights-report-{session_id}.pdf"'}
+    headers = {"Content-Disposition": f'attachment; filename="psychometric-insights-report-{session_id}.pdf"'}
     record_report_generation("ok", perf_counter() - started)
     return StreamingResponse(pdf_buffer, media_type="application/pdf", headers=headers)
 

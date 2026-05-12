@@ -4,12 +4,13 @@ pydantic
 pydantic-settings
 python-dotenv
 openai
-google-genai
 sqlalchemy
 psycopg[binary]
 python-jose[cryptography]
 passlib[bcrypt]
 reportlab
+playwright
+jinja2
 pytest
 pytest-cov
 httpx>=0.27,<1

@@ -20,6 +20,7 @@ def test_client(tmp_path_factory):
     os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
     os.environ["LOG_LEVEL"] = "DEBUG"
     os.environ["METRICS_ENABLED"] = "true"
+    os.environ["PDF_RENDERER"] = "reportlab"
 
     import app.config as config
     import app.database as database

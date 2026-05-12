@@ -47,7 +47,13 @@ export default function AssessmentSessionRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional single fetch per sessionId
   }, [sessionId]);
 
-  if (loading) return <div className="page center">Loading assessment...</div>;
+  if (loading) {
+    return (
+      <div className="page center app-loading" role="status" aria-live="polite">
+        Loading assessment…
+      </div>
+    );
+  }
   if (failed) return <Navigate to="/dashboard" replace />;
   return <AssessmentFlow initialScene={latestScene} />;
 }

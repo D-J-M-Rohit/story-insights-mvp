@@ -1,3 +1,4 @@
+import logging
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -6,8 +7,13 @@ from reportlab.lib.units import inch
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
+from .config import settings
+from .pdf_template import build_report_html, construct_coverage
 
-def build_report_pdf(report: dict) -> BytesIO:
+log = logging.getLogger(__name__)
+
+
+def build_report_pdf_reportlab(report: dict) -> BytesIO:
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
@@ -70,79 +76,145 @@ def build_report_pdf(report: dict) -> BytesIO:
                 pdf.drawString(x3, draw_y, label_lines[idx])
         y -= row_height
 
-    pdf.setTitle("Story Insights Report")
-    line("Story Insights Report", "Helvetica-Bold", 16, 22)
-    line(f"Session ID: {report.get('session_id', '-')}")
+    pdf.setTitle("Psychometric Insights Report")
+    line("Psychometric Insights Report", "Helvetica-Bold", 16, 22)
     line(f"Scenario: {report.get('scenario', '-')}")
     line(f"Started: {report.get('started_at', '-')}")
     line(f"Completed: {report.get('completed_at', '-')}")
     duration_ms = report.get("duration_ms")
     duration_sec = round(float(duration_ms) / 1000.0, 1) if duration_ms is not None else "-"
     line(f"Duration: {duration_sec} sec")
-    line("Disclaimer: Experimental reflection only. Not clinical, diagnostic, or hiring advice.", gap=20)
+    line(f"Session ID: {report.get('session_id', '-')}", size=9, gap=14)
+    line(
+        "Experimental reflection only. This is not a clinical, diagnostic, or hiring assessment.",
+        gap=18,
+    )
 
     interp = report.get("interpretation", {})
-    line(f"Decision Style: {interp.get('decision_style', '-')}", gap=18)
-    line(f"Strengths: {interp.get('strengths', '-')}", gap=18)
-    line(f"Growth Areas: {interp.get('growth_areas', '-')}", gap=18)
-    line(f"Setting-Specific Summary: {interp.get('setting_specific_summary', '-')}", gap=22)
+    line("Decision Style Summary", "Helvetica-Bold", 13, 16)
+    line(f"Decision Style: {interp.get('decision_style', '-')}", gap=14)
+    line(f"Key Strengths: {interp.get('strengths', '-')}", gap=14)
+    line(f"Growth Opportunity: {interp.get('growth_areas', '-')}", gap=14)
+    line(f"Setting-Specific Summary: {interp.get('setting_specific_summary', '-')}", gap=16)
 
-    line("Metric Table", "Helvetica-Bold", 13, 18)
+    line("Construct Coverage (target_construct counts)", "Helvetica-Bold", 12, 14)
+    cc = construct_coverage(report)
+    line(", ".join(f"{k}: {cc.get(k, 0)}" for k in cc), gap=16)
+
+    line("Feature Score Overview", "Helvetica-Bold", 13, 18)
     metric_header()
-    labels = {item.get("key"): item.get("label", "-") for item in interp.get("trait_buckets", [])}
+    labels = {item.get("key"): item.get("label", "-") for item in (interp.get("trait_buckets") or []) if isinstance(item, dict)}
     for feature in report.get("features", []):
         metric_name = feature.get("name", feature.get("key", "-"))
         metric_row(metric_name, str(feature.get("score", "-")), labels.get(feature.get("key"), "-"))
         conf = feature.get("confidence") or {}
-        if conf:
+        low = feature.get("confidence_low")
+        high = feature.get("confidence_high")
+        if low is None:
+            low = conf.get("low")
+        if high is None:
+            high = conf.get("high")
+        if low is not None and high is not None:
             line(
-                f"Estimated range: {conf.get('low', '-')} - {conf.get('high', '-')} | "
-                f"Confidence: {str(conf.get('level', 'exploratory')).title()} | "
-                f"Evidence: {conf.get('evidence_count', 0)} decisions",
+                f"Confidence band: {low} - {high} | "
+                f"Bucket: {feature.get('bucket', '-')} | Status: {feature.get('interpretation_status', '-')}",
                 size=9,
                 gap=12,
             )
 
     cards = report.get("evidence_cards") or []
     if cards:
-        line("Why this score?", "Helvetica-Bold", 13, 18)
-        for card in cards[:4]:
+        line("Why This Score?", "Helvetica-Bold", 13, 18)
+        for card in cards:
             line(
-                f"{card.get('feature_name', card.get('feature_key'))}: {card.get('score')} ({card.get('label', '')})",
+                f"{card.get('feature_name', card.get('feature_key'))}: {card.get('score')} ({card.get('bucket', '')}) — {card.get('label', '')}",
                 size=10,
-                gap=14,
+                gap=12,
             )
-            for bullet in (card.get("evidence") or [])[:2]:
-                line(f"- {bullet}", size=9, gap=12)
+            for bullet in (card.get("evidence") or [])[:4]:
+                line(f"- {bullet}", size=9, gap=11)
 
     comparisons = report.get("benchmark_comparisons") or []
     if comparisons:
+        pdf.showPage()
+        y = height - top_margin
         line("Baseline Comparison", "Helvetica-Bold", 13, 18)
-        for comp in comparisons[:8]:
+        for comp in comparisons:
             line(
-                f"{comp.get('metric_name', comp.get('feature_key'))}: {int(comp.get('score', 0))} "
-                f"({comp.get('band', 'within reference band')})",
+                f"{comp.get('metric_name', comp.get('feature_key'))}: {int(comp.get('score', 0))} — {comp.get('band', '')}",
                 size=10,
-                gap=14,
+                gap=12,
             )
-            line(f"Reference band: {comp.get('low_threshold', 35)}-{comp.get('high_threshold', 65)}", size=9, gap=12)
+            line(
+                f"Reference band: {comp.get('low_threshold', 35)}-{comp.get('high_threshold', 65)}",
+                size=9,
+                gap=11,
+            )
         line(
-            "Compared against an internal reference band only. "
-            "This is not a clinical, population, or hiring norm.",
+            "Internal reference band only. Not a clinical, population, or hiring benchmark.",
             size=9,
             gap=14,
         )
 
-    line(
-        "Confidence bands are exploratory estimates based on evidence count and telemetry completeness. "
-        "They are not validated clinical or hiring intervals.",
-        size=9,
-    )
-    line(
-        "Technical note: Scores are experimental and based on a short interactive session. "
-        "They should not be treated as clinical, diagnostic, or hiring assessments.",
-        size=10,
-    )
+    line("PEN Proxy Summary", "Helvetica-Bold", 13, 16)
+    line("These are experimental proxy signals, not clinical personality scores.", size=9, gap=12)
+    for pen in report.get("pen") or []:
+        if isinstance(pen, dict):
+            line(f"{pen.get('name', '-')}: {pen.get('score', '-')}", size=10, gap=12)
+
     pdf.save()
     buffer.seek(0)
     return buffer
+
+
+def _report_for_html(report: dict) -> dict:
+    out = dict(report)
+    out["_pdf_include_debug"] = bool(getattr(settings, "PDF_INCLUDE_DEBUG", False))
+    return out
+
+
+async def build_report_pdf_playwright(report: dict) -> BytesIO:
+    from playwright.async_api import async_playwright
+
+    html = build_report_html(_report_for_html(report))
+    fmt = (settings.PDF_PAGE_SIZE or "A4").strip()
+    margin = {
+        "top": settings.PDF_MARGIN_TOP,
+        "right": settings.PDF_MARGIN_RIGHT,
+        "bottom": settings.PDF_MARGIN_BOTTOM,
+        "left": settings.PDF_MARGIN_LEFT,
+    }
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+        )
+        try:
+            page = await browser.new_page()
+            await page.set_content(html, wait_until="load")
+            pdf_bytes = await page.pdf(
+                format=fmt,
+                print_background=True,
+                margin=margin,
+            )
+        finally:
+            await browser.close()
+    return BytesIO(pdf_bytes)
+
+
+async def build_report_pdf(report: dict) -> BytesIO:
+    renderer = (getattr(settings, "PDF_RENDERER", "playwright") or "playwright").lower()
+    if renderer == "reportlab":
+        return build_report_pdf_reportlab(report)
+
+    try:
+        return await build_report_pdf_playwright(report)
+    except Exception as exc:
+        log.warning(
+            "playwright_pdf_failed",
+            exc_info=True,
+            extra={"error_type": type(exc).__name__},
+        )
+        if getattr(settings, "PDF_FALLBACK_REPORTLAB", True):
+            return build_report_pdf_reportlab(report)
+        raise RuntimeError("playwright_pdf_unavailable") from exc

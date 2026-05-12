@@ -27,14 +27,20 @@ export default function TimerBar({ seconds, onExpire, sceneId }) {
   }, [onExpire, sceneId]);
 
   const pct = seconds > 0 ? (remaining / seconds) * 100 : 0;
+  const ratio = seconds > 0 ? remaining / seconds : 1;
+  const fillClass =
+    ratio <= 0.12 ? "timer-fill timer-fill--critical" : ratio <= 0.28 ? "timer-fill timer-fill--warn" : "timer-fill";
+
   return (
-    <div className="timer-wrap">
+    <div className="timer-wrap no-print">
       <div className="timer-row">
-        <span>Time left</span>
-        <strong>{remaining}s</strong>
+        <span>Time remaining</span>
+        <strong>
+          {remaining}s <span className="muted" style={{ fontWeight: 500 }}> / {seconds}s</span>
+        </strong>
       </div>
-      <div className="timer-track">
-        <div className="timer-fill" style={{ width: `${pct}%` }} />
+      <div className="timer-track" role="progressbar" aria-valuemin={0} aria-valuemax={seconds} aria-valuenow={remaining}>
+        <div className={fillClass} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

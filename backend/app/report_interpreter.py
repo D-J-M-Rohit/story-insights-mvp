@@ -141,16 +141,6 @@ def llm_interpretation(report, scenario):
             client = OpenAI(api_key=settings.OPENAI_API_KEY)
             response = client.responses.create(model=settings.OPENAI_MODEL, input=prompt)
             text = getattr(response, "output_text", "") or str(response)
-        elif provider == "gemini":
-            from google import genai
-
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=prompt,
-                config={"response_mime_type": "application/json"},
-            )
-            text = response.text or ""
         start = text.find("{")
         end = text.rfind("}")
         if start < 0 or end < 0:

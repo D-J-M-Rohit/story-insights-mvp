@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ title }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 14mm 12mm 14mm 12mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #111827;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    .wrap { max-width: 180mm; margin: 0 auto; }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px 0;
+      color: #111827;
+    }
+    h2 {
+      font-size: 14px;
+      font-weight: 700;
+      margin: 0 0 10px 0;
+      color: #111827;
+    }
+    h3 {
+      font-size: 12px;
+      font-weight: 600;
+      margin: 0 0 8px 0;
+      color: #4f46e5;
+    }
+    .muted { color: #6b7280; font-size: 10px; }
+    .session-id { font-size: 9px; color: #9ca3af; margin-top: 12px; }
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      background: #fff;
+      page-break-inside: avoid;
+    }
+    .header-accent {
+      height: 4px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #4f46e5, #6366f1);
+      margin-bottom: 14px;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 16px;
+      margin-top: 8px;
+    }
+    .meta-label { color: #6b7280; font-size: 10px; }
+    .meta-value { font-weight: 500; font-size: 11px; }
+    .disclaimer {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      font-size: 10px;
+      color: #374151;
+    }
+    .field { margin-bottom: 8px; }
+    .field strong { color: #111827; }
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .pill {
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 10px;
+      background: #fafafa;
+    }
+    .pill em { font-style: normal; font-weight: 700; color: #4f46e5; }
+    .feature-row {
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+    .feature-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .feature-name { font-weight: 600; font-size: 11px; }
+    .feature-meta { font-size: 9px; color: #6b7280; margin-top: 2px; }
+    .bar-track {
+      height: 8px;
+      border-radius: 6px;
+      background: #e5e7eb;
+      position: relative;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      background: #4f46e5;
+      min-width: 2px;
+    }
+    .bar-score {
+      float: right;
+      font-size: 10px;
+      font-weight: 600;
+      color: #111827;
+      margin-top: 4px;
+    }
+    .bucket-pill {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .bucket-low { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .bucket-balanced { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+    .bucket-high { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+    .bucket-neutral { background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb; }
+    .evidence-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+    }
+    .evidence-card h4 { margin: 0 0 6px 0; font-size: 11px; }
+    .evidence-card ul { margin: 6px 0 0 16px; padding: 0; }
+    .evidence-card li { margin-bottom: 4px; }
+    .bench-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 10px;
+      page-break-inside: avoid;
+    }
+    .bench-row:last-child { border-bottom: none; }
+    .pen-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+    @media print {
+      .pen-grid { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    .pen-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+      text-align: center;
+      page-break-inside: avoid;
+    }
+    .pen-card .pen-score { font-size: 18px; font-weight: 700; color: #4f46e5; margin-top: 6px; }
+    .hard-page-break {
+      page-break-before: always;
+      break-before: page;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #111827;
+      margin: 22px 0 10px 0;
+      padding-bottom: 4px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header-accent"></div>
+
+    <div class="card">
+      <h1>{{ title }}</h1>
+      <div class="meta-grid">
+        <div>
+          <div class="meta-label">Scenario</div>
+          <div class="meta-value">{{ scenario or "-" }}</div>
+        </div>
+        <div>
+          <div class="meta-label">Duration</div>
+          <div class="meta-value">{{ duration }}</div>
+        </div>
+        <div>
+          <div class="meta-label">Started</div>
+          <div class="meta-value">{{ started_at }}</div>
+        </div>
+        <div>
+          <div class="meta-label">Completed</div>
+          <div class="meta-value">{{ completed_at }}</div>
+        </div>
+      </div>
+      <p class="session-id">Session ID: {{ session_id }}</p>
+      <div class="disclaimer">{{ header_disclaimer }}</div>
+    </div>
+
+    <div class="section-title">Decision Style Summary</div>
+    <div class="card">
+      <div class="field"><strong>Decision Style</strong><br /><span>{{ decision_style or "-" }}</span></div>
+      <div class="field"><strong>Key Strengths</strong><br /><span>{{ strengths or "-" }}</span></div>
+      <div class="field"><strong>Growth Opportunity</strong><br /><span>{{ growth_opportunity or "-" }}</span></div>
+      <div class="field"><strong>Setting-Specific Summary</strong><br /><span>{{ setting_specific_summary or "-" }}</span></div>
+      {% if key_signals_line %}
+      <p class="muted" style="margin-top:10px;"><strong>Key signals:</strong> {{ key_signals_line }}</p>
+      {% endif %}
+    </div>
+
+    <div class="section-title">Construct Coverage</div>
+    <div class="card">
+      <div class="pills">
+        {% for k in ["risk", "social", "empathy", "decisiveness", "emotional_regulation"] %}
+        <span class="pill"><em>{{ k }}</em>: {{ construct_counts.get(k, 0) }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="hard-page-break">
+    <div class="section-title">Feature Score Overview</div>
+    <div class="card">
+      {% for f in features %}
+      <div class="feature-row">
+        <div class="feature-head">
+          <span class="feature-name">{{ f.name }}</span>
+          <span>
+            {% if f.bucket %}
+            <span class="bucket-pill {{ bucket_class(f.bucket) }}">{{ f.bucket }}</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="feature-meta">
+          {% if f.label %}Label: {{ f.label }}{% endif %}
+          {% if f.interpretation_status %} · Status: {{ f.interpretation_status }}{% endif %}
+          {% if f.confidence_low is not none and f.confidence_high is not none %}
+          · Band: {{ fmt_score(f.confidence_low) }}–{{ fmt_score(f.confidence_high) }}
+          {% endif %}
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ f.bar_pct }}%;"></div>
+        </div>
+        <div class="bar-score">{{ fmt_score(f.score) }}</div>
+        <div style="clear:both;"></div>
+      </div>
+      {% endfor %}
+      {% if not features %}
+      <p class="muted">No feature scores available.</p>
+      {% endif %}
+    </div>
+    </div>
+
+    <div class="hard-page-break">
+    <div class="section-title">Why This Score?</div>
+    {% for card in evidence_cards %}
+    <div class="evidence-card">
+      <h4>
+        {{ card.feature_name }}
+        <span class="muted">{{ fmt_score(card.score) }}</span>
+        {% if card.bucket %}
+        <span class="bucket-pill {{ bucket_class(card.bucket) }}">{{ card.bucket }}</span>
+        {% endif %}
+      </h4>
+      <p class="muted" style="margin:0;">{{ card.label }}</p>
+      {% if card.evidence %}
+      <ul>
+        {% for bullet in card.evidence %}
+        <li>{{ bullet }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if not evidence_cards %}
+    <div class="card"><p class="muted">No evidence cards for this report.</p></div>
+    {% endif %}
+    </div>
+
+    <div class="hard-page-break">
+    <div class="section-title">Baseline Comparison</div>
+    <div class="card">
+      {% for b in benchmark_rows %}
+      <div class="bench-row">
+        <span><strong>{{ b.metric_name }}</strong></span>
+        <span>{{ fmt_score(b.score) }}</span>
+        <span class="bucket-pill {{ bucket_class(b.band) }}">{{ b.band_short }}</span>
+      </div>
+      <div class="muted" style="margin:-4px 0 6px 0;">Reference band: {{ b.low_threshold }}–{{ b.high_threshold }}</div>
+      {% endfor %}
+      {% if not benchmark_rows %}
+      <p class="muted">No benchmark comparisons for this report.</p>
+      {% endif %}
+      <p class="muted" style="margin-top:10px;">{{ benchmark_footer }}</p>
+    </div>
+    </div>
+
+    <div class="section-title">PEN Proxy Summary</div>
+    <div class="card">
+      <p class="muted" style="margin-top:0;">{{ pen_note }}</p>
+      <div class="pen-grid">
+        {% for p in pen_cards %}
+        <div class="pen-card">
+          <div style="font-size:10px;font-weight:600;">{{ p.name }}</div>
+          <div class="pen-score">{{ fmt_score(p.score) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% if not pen_cards %}
+      <p class="muted">No PEN proxy summary available.</p>
+      {% endif %}
+    </div>
+
+    {% if include_debug %}
+    <p class="muted">PDF debug mode on.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

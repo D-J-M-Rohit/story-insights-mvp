@@ -55,56 +55,66 @@ export default function App() {
     [user, session, login, logout]
   );
 
-  if (authLoading) return <div className="page center">Loading...</div>;
+  if (authLoading) {
+    return (
+      <div className="app-shell">
+        <div className="page center app-loading" role="status" aria-live="polite">
+          Loading…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <SessionContext.Provider value={value}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <AuthScreen />} />
-          <Route path="/" element={<Navigate to={user ? "/dashboard" : "/auth"} replace />} />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <Dashboard />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/consent"
-            element={
-              <RequireAuth>
-                <ConsentScreen />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/assessment/:sessionId"
-            element={
-              <RequireAuth>
-                <AssessmentSessionRoute />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/assessment"
-            element={
-              <RequireAuth>
-                {session ? <AssessmentFlow /> : <Navigate to="/dashboard" replace />}
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/report/:sessionId"
-            element={
-              <RequireAuth>
-                <ReportViewer />
-              </RequireAuth>
-            }
-          />
-        </Routes>
-      </BrowserRouter>
+      <div className="app-shell">
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <AuthScreen />} />
+            <Route path="/" element={<Navigate to={user ? "/dashboard" : "/auth"} replace />} />
+            <Route
+              path="/dashboard"
+              element={
+                <RequireAuth>
+                  <Dashboard />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/consent"
+              element={
+                <RequireAuth>
+                  <ConsentScreen />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/assessment/:sessionId"
+              element={
+                <RequireAuth>
+                  <AssessmentSessionRoute />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/assessment"
+              element={
+                <RequireAuth>
+                  {session ? <AssessmentFlow /> : <Navigate to="/dashboard" replace />}
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/report/:sessionId"
+              element={
+                <RequireAuth>
+                  <ReportViewer />
+                </RequireAuth>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+      </div>
     </SessionContext.Provider>
   );
 }

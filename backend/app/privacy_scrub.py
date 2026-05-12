@@ -28,7 +28,7 @@ HANDLE_RE = re.compile(r"(?<!\w)@[a-zA-Z0-9_]{2,32}\b")
 JWT_RE = re.compile(r"\beyJ[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9._-]{5,}\.[a-zA-Z0-9._-]{5,}\b")
 BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._\-~+/=]{10,}\b", re.IGNORECASE)
 API_KEY_RE = re.compile(
-    r"\b(?:sk-[A-Za-z0-9]{16,}|OPENAI_API_KEY\s*[=:]\s*[A-Za-z0-9_\-]{10,}|GEMINI_API_KEY\s*[=:]\s*[A-Za-z0-9_\-]{10,})\b"
+    r"\b(?:sk-[A-Za-z0-9]{16,}|OPENAI_API_KEY\s*[=:]\s*[A-Za-z0-9_\-]{10,})\b"
 )
 DB_URL_RE = re.compile(r"\b(?:postgresql(?:\+psycopg)?|mysql|mongodb|redis)://[^\s]+", re.IGNORECASE)
 IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
@@ -46,7 +46,6 @@ _STRING_KEY_HINTS = (
     "jwt",
     "credential",
     "openai",
-    "gemini",
     "database_url",
     "prompt",
     "scene",

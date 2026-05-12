@@ -5,8 +5,6 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "mock"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4.1-mini"
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/story_insights"
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
@@ -80,6 +78,14 @@ class Settings(BaseSettings):
     PROVIDER_CIRCUIT_OPEN_SEC: int = 60
     PROVIDER_CIRCUIT_HALF_OPEN_MAX_CALLS: int = 1
     BENCHMARK_COMPARISONS_ENABLED: bool = True
+    PDF_RENDERER: str = "playwright"
+    PDF_INCLUDE_DEBUG: bool = False
+    PDF_PAGE_SIZE: str = "A4"
+    PDF_MARGIN_TOP: str = "14mm"
+    PDF_MARGIN_RIGHT: str = "12mm"
+    PDF_MARGIN_BOTTOM: str = "14mm"
+    PDF_MARGIN_LEFT: str = "12mm"
+    PDF_FALLBACK_REPORTLAB: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

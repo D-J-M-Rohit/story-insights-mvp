@@ -22,10 +22,10 @@ def test_circuit_breaker_opens_after_threshold():
 
 def test_circuit_breaker_resets_on_success():
     breaker = ProviderCircuitBreaker(_Settings())
-    breaker.record_failure("gemini", "flash", "timeout")
-    breaker.record_failure("gemini", "flash", "timeout")
-    assert breaker.get_snapshot("gemini", "flash")["state"] == CircuitState.OPEN
-    breaker.record_success("gemini", "flash")
-    snap = breaker.get_snapshot("gemini", "flash")
+    breaker.record_failure("other_llm", "flash", "timeout")
+    breaker.record_failure("other_llm", "flash", "timeout")
+    assert breaker.get_snapshot("other_llm", "flash")["state"] == CircuitState.OPEN
+    breaker.record_success("other_llm", "flash")
+    snap = breaker.get_snapshot("other_llm", "flash")
     assert snap["state"] == CircuitState.CLOSED
     assert snap["failure_count"] == 0

@@ -122,20 +122,11 @@ class LLMGateway:
                 scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
             else:
                 scene = self.generate_openai_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
-        elif provider == "gemini":
-            if not settings.GEMINI_API_KEY:
-                fallback_reason = "missing_api_key"
-                scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
-            elif not circuit_breaker.allow_request(provider, model):
-                fallback_reason = "circuit_open"
-                scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
-            else:
-                scene = self.generate_gemini_scene(session, history, turn, policy, pack, context_bundle=context_bundle)
         else:
             scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
         normalized = self.normalize_scene(scene, session["id"], turn, policy, context_bundle)
         validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
-        if not validation["valid"] and provider in {"openai", "gemini"}:
+        if not validation["valid"] and provider == "openai":
             retry_scene = self.generate_provider_scene(
                 provider, session, history, turn, policy, pack, context_bundle=context_bundle, strict_retry=True
             )
@@ -147,7 +138,7 @@ class LLMGateway:
             fallback_scene = self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
             normalized = self.normalize_scene(fallback_scene, session["id"], turn, policy, context_bundle)
             validation = validate_scene_against_policy(normalized, policy, pack, context_bundle=context_bundle)
-        if provider in {"openai", "gemini"}:
+        if provider == "openai":
             if fallback_reason:
                 circuit_breaker.record_failure(provider, model, fallback_reason)
             else:
@@ -190,8 +181,6 @@ class LLMGateway:
     def model_snapshot(self, provider: str) -> str:
         if provider == "openai":
             return settings.OPENAI_MODEL or "gpt-4.1-mini"
-        if provider == "gemini":
-            return settings.GEMINI_MODEL or "gemini-2.5-flash"
         return "mock"
 
     def fallback_policy(self, session, turn, pack=None):
@@ -213,10 +202,6 @@ class LLMGateway:
     def generate_provider_scene(self, provider, session, history, turn, policy, pack, context_bundle=None, strict_retry=False):
         if provider == "openai":
             return self.generate_openai_scene(
-                session, history, turn, policy, pack, context_bundle=context_bundle, strict_retry=strict_retry
-            )
-        if provider == "gemini":
-            return self.generate_gemini_scene(
                 session, history, turn, policy, pack, context_bundle=context_bundle, strict_retry=strict_retry
             )
         return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
@@ -294,25 +279,6 @@ class LLMGateway:
             if not text:
                 text = str(response)
             return self.parse_scene_json(text)
-        except Exception:
-            return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
-
-    def generate_gemini_scene(self, session, history, turn, policy, pack, context_bundle=None, strict_retry=False):
-        try:
-            from google import genai
-
-            prompt = build_scene_prompt(
-                session["scenario"], turn, session["max_turns"], history, policy=policy, pack=pack, context_bundle=context_bundle
-            )
-            if strict_retry:
-                prompt += "\nSTRICT RETRY: follow schema exactly, include required metadata and target construct spread."
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL or "gemini-2.5-flash",
-                contents=prompt,
-                config={"response_mime_type": "application/json"},
-            )
-            return self.parse_scene_json(response.text)
         except Exception:
             return self.generate_mock_scene(session, history, turn, policy=policy, pack=pack, context_bundle=context_bundle)
 

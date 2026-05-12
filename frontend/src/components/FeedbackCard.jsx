@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { MessageSquareHeart } from "lucide-react";
 import { submitFeedback } from "../api";
 
 const TAGS = ["helpful", "confusing", "too_generic", "repetitive", "uncomfortable", "bug report"];
@@ -50,8 +51,11 @@ export default function FeedbackCard({ sessionId, reportId, onSubmitted }) {
   }
 
   return (
-    <div className="card feedback-card">
-      <h3>Help improve Story Insights</h3>
+    <div className="card feedback-card feedback-card-premium">
+      <h3 className="feedback-card-title">
+        <MessageSquareHeart size={22} aria-hidden />
+        Help improve Psychometric Insights
+      </h3>
       <p className="feedback-note">Optional. Your feedback helps improve the experience and will not affect your score.</p>
       {success ? (
         <p>Thanks — your feedback was recorded.</p>
@@ -60,7 +64,13 @@ export default function FeedbackCard({ sessionId, reportId, onSubmitted }) {
           <div className="rating-row">
             <span>How useful was this report?</span>
             {[1, 2, 3, 4, 5].map((n) => (
-              <button type="button" key={`u-${n}`} className={`rating-button ${ratingUseful === n ? "selected" : ""}`} onClick={() => setRatingUseful(n)}>
+              <button
+                type="button"
+                key={`u-${n}`}
+                className={`rating-button ${ratingUseful === n ? "selected" : ""}`}
+                onClick={() => setRatingUseful(n)}
+                aria-pressed={ratingUseful === n}
+              >
                 {n}
               </button>
             ))}
@@ -68,14 +78,26 @@ export default function FeedbackCard({ sessionId, reportId, onSubmitted }) {
           <div className="rating-row">
             <span>How engaging was the story?</span>
             {[1, 2, 3, 4, 5].map((n) => (
-              <button type="button" key={`e-${n}`} className={`rating-button ${ratingEngaging === n ? "selected" : ""}`} onClick={() => setRatingEngaging(n)}>
+              <button
+                type="button"
+                key={`e-${n}`}
+                className={`rating-button ${ratingEngaging === n ? "selected" : ""}`}
+                onClick={() => setRatingEngaging(n)}
+                aria-pressed={ratingEngaging === n}
+              >
                 {n}
               </button>
             ))}
           </div>
           <div className="feedback-actions">
             {TAGS.map((tag) => (
-              <button type="button" key={tag} className={`tag-chip ${tags.includes(tag) ? "selected" : ""}`} onClick={() => toggleTag(tag)}>
+              <button
+                type="button"
+                key={tag}
+                className={`tag-chip ${tags.includes(tag) ? "selected" : ""}`}
+                onClick={() => toggleTag(tag)}
+                aria-pressed={tags.includes(tag)}
+              >
                 {tag}
               </button>
             ))}
@@ -84,11 +106,12 @@ export default function FeedbackCard({ sessionId, reportId, onSubmitted }) {
             Optional: what was confusing, uncomfortable, or especially helpful?
             <textarea maxLength={300} disabled={!consent} value={comment} onChange={(e) => setComment(e.target.value)} />
           </label>
-          <label>
-            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> I agree to include this comment as product feedback.
+          <label className="checkbox-field">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <span>I agree to include this comment as product feedback.</span>
           </label>
           <button type="submit" disabled={!canSubmit || submitting}>
-            {submitting ? "Submitting..." : "Submit feedback"}
+            {submitting ? "Submitting…" : "Submit feedback"}
           </button>
           {error && <p className="error">{error}</p>}
         </form>

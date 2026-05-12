@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SessionContext } from "../App";
 import { getNextScene } from "../api";
+import AppHeader from "./AppHeader";
 import SceneLoading from "./SceneLoading";
 import MicroFeedbackPrompt from "./MicroFeedbackPrompt";
 import SceneRenderer from "./SceneRenderer";
@@ -172,62 +173,100 @@ export default function AssessmentFlow({ initialScene = null }) {
     }
   }
 
-  if (loading) return <div className="page center">Loading scene...</div>;
-  if (error && !scene) return <div className="page center error">{error}</div>;
-  if (!scene) return <div className="page center">No scene.</div>;
+  if (loading) {
+    return (
+      <>
+        <AppHeader title="Assessment" />
+        <div className="page center app-loading" role="status">
+          Loading scene…
+        </div>
+      </>
+    );
+  }
+  if (error && !scene) {
+    return (
+      <>
+        <AppHeader title="Assessment" />
+        <div className="page center error">{error}</div>
+      </>
+    );
+  }
+  if (!scene) {
+    return (
+      <>
+        <AppHeader title="Assessment" />
+        <div className="page center">No scene.</div>
+      </>
+    );
+  }
+
+  const maxTurns = session?.max_turns ?? "?";
+  const scenarioLabel = session?.scenario ?? "—";
 
   return (
-    <div className="page">
-      {loadingNext ? (
-        <SceneLoading selectedChoiceText={lastChoiceText} />
-      ) : (
-        <>
-          {import.meta.env.DEV && scene?.scene_metadata?.target_construct && (
-            <p className="muted small">
-              Target: {scene.scene_metadata.target_construct} · Difficulty: {scene.scene_metadata.difficulty}
-            </p>
-          )}
-          {import.meta.env.DEV && <p className="muted small">Telemetry active</p>}
-          {import.meta.env.DEV && Array.isArray(scene?.scene_metadata?.context_fragment_ids) && (
-            <p className="muted small">Context: {scene.scene_metadata.context_fragment_ids.length} anchors</p>
-          )}
-          <MicroFeedbackPrompt
-            sessionId={session.id}
-            sceneId={scene.id}
-            turn={scene.turn}
-            maxTurns={session.max_turns}
-          />
-          <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
-          <SceneRenderer
-            scene={scene}
-            selected={selected}
-            onSelect={setSelected}
-            onHover={onHover}
-            onLeave={onLeave}
-            onSubmit={() => submitCurrent(false)}
-            submitting={submitting}
-          />
-        </>
-      )}
-      {error && <p className="error">{error}</p>}
-      {error && lastPayload && (
-        <button onClick={async () => {
-          setError("");
-          setLoadingNext(true);
-          try {
-            const next = await getNextScene(lastPayload);
-            setScene(next);
-            resetTelemetry();
-            setLastPayload(null);
-          } catch (e) {
-            setError(e.message);
-          } finally {
-            setLoadingNext(false);
-          }
-        }}>
-          Retry
-        </button>
-      )}
-    </div>
+    <>
+      <AppHeader title="Assessment" />
+      <div className="page">
+        {loadingNext ? (
+          <SceneLoading selectedChoiceText={lastChoiceText} />
+        ) : (
+          <>
+            <div className="assessment-progress no-print">
+              <span className="scenario-pill" title="Scenario">
+                Scenario: <strong>{scenarioLabel}</strong>
+              </span>
+              <span className="meta-pill" aria-label={`Turn ${scene.turn} of ${maxTurns}`}>
+                Turn {scene.turn} of {maxTurns}
+              </span>
+            </div>
+            {import.meta.env.DEV && scene?.scene_metadata?.target_construct && (
+              <p className="muted small">
+                Target: {scene.scene_metadata.target_construct} · Difficulty: {scene.scene_metadata.difficulty}
+              </p>
+            )}
+            {import.meta.env.DEV && <p className="muted small">Telemetry active</p>}
+            {import.meta.env.DEV && Array.isArray(scene?.scene_metadata?.context_fragment_ids) && (
+              <p className="muted small">Context: {scene.scene_metadata.context_fragment_ids.length} anchors</p>
+            )}
+            <MicroFeedbackPrompt
+              sessionId={session.id}
+              sceneId={scene.id}
+              turn={scene.turn}
+              maxTurns={session.max_turns}
+            />
+            <TimerBar seconds={scene.time_limit_sec} sceneId={scene.id} onExpire={() => submitCurrent(true)} />
+            <SceneRenderer
+              scene={scene}
+              selected={selected}
+              onSelect={setSelected}
+              onHover={onHover}
+              onLeave={onLeave}
+              onSubmit={() => submitCurrent(false)}
+              submitting={submitting}
+            />
+          </>
+        )}
+        {error && <p className="error">{error}</p>}
+        {error && lastPayload && (
+          <button type="button" onClick={async () => {
+            setError("");
+            setLoadingNext(true);
+            try {
+              const next = await getNextScene(lastPayload);
+              setScene(next);
+              resetTelemetry();
+              setLastPayload(null);
+            } catch (e) {
+              setError(e.message);
+            } finally {
+              setLoadingNext(false);
+            }
+          }}
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    </>
   );
 }

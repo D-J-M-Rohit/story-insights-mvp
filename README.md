@@ -1,4 +1,4 @@
-# Story Insights
+# Psychometric Insights
 
 Production-style platform for branching story insights with:
 - JWT auth + persistent user sessions
@@ -18,6 +18,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ```
+
+After installing Python dependencies, install Chromium for backend PDF generation (HTML-to-PDF via Playwright):
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m playwright install chromium
+```
+
+This step is **required** when `PDF_RENDERER=playwright` (the default in `.env.example`). Without Chromium, PDF generation falls back to ReportLab if `PDF_FALLBACK_REPORTLAB=true`, or returns a 500 error if fallback is disabled.
 
 2) Start local Postgres (optional, recommended for local dev):
 
@@ -77,7 +87,6 @@ Skipped unless enabled explicitly:
 ```bash
 cd backend
 RUN_PROVIDER_SMOKE_TESTS=true LLM_PROVIDER=openai OPENAI_API_KEY=your_key pytest tests/test_provider_smoke_optional.py -k openai
-RUN_PROVIDER_SMOKE_TESTS=true LLM_PROVIDER=gemini GEMINI_API_KEY=your_key pytest tests/test_provider_smoke_optional.py -k gemini
 ```
 
 ### Privacy scrubbing
@@ -98,8 +107,6 @@ Edit `backend/.env`:
 LLM_PROVIDER=mock
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
 
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/story_insights
 
@@ -117,6 +124,16 @@ AUTH_ALLOW_TOKEN_RESPONSE_OVERRIDE=true
 CORS_ORIGINS=http://localhost:5173
 
 REPORT_LLM_SUMMARY_ENABLED=true
+
+# PDF: polished HTML print layout via Playwright (default) or plain ReportLab fallback
+PDF_RENDERER=playwright
+PDF_FALLBACK_REPORTLAB=true
+PDF_INCLUDE_DEBUG=false
+PDF_PAGE_SIZE=A4
+PDF_MARGIN_TOP=14mm
+PDF_MARGIN_RIGHT=12mm
+PDF_MARGIN_BOTTOM=14mm
+PDF_MARGIN_LEFT=12mm
 ```
 
 Cookie auth notes:
@@ -139,8 +156,8 @@ Cookie auth notes:
 
 ## LLM Behavior
 
-- Scene generation uses `LLM_PROVIDER` (`mock`, `openai`, `gemini`).
-- If OpenAI/Gemini scene generation fails, backend falls back safely to mock scenes.
+- Scene generation uses `LLM_PROVIDER` (`mock` or `openai`).
+- If OpenAI scene generation fails, backend falls back safely to mock scenes.
 - Report summaries use `REPORT_LLM_SUMMARY_ENABLED=true` and same provider env.
 - If report LLM summary fails or returns invalid JSON, backend falls back to deterministic interpretation.
 
@@ -157,6 +174,14 @@ Cookie auth notes:
 - `GET /api/v1/reports/{session_id}`
 - `GET /api/v1/reports/{session_id}/pdf`
 - `GET /health`
+
+### Backend PDF reports
+
+- On-demand `GET /api/v1/reports/{session_id}/pdf` builds a **print HTML** layout (cards, score bars, sections) and renders it with **Playwright/Chromium**, so the file resembles a polished browser print (Cmd+P) without nav buttons, logout, feedback forms, download controls, or URL footers.
+- **Install Chromium** after `pip install -r requirements.txt`: `python -m playwright install chromium`.
+- Configure in `backend/.env`: `PDF_RENDERER=playwright` (default), `PDF_FALLBACK_REPORTLAB=true` (uses the older ReportLab builder if Playwright fails, for example when Chromium is not installed), margins and `PDF_PAGE_SIZE`.
+- ReportLab output is plain but reliable for CI or minimal environments. Playwright output is preferred for demo-quality visuals.
+- PDFs are streamed and not stored unless object-archive PDF features are enabled.
 
 ## Prompt Policy Engine and Scenario Packs
 
@@ -231,7 +256,7 @@ Additional endpoints:
 
 - Backend tests are necessary because this platform combines auth, scene generation, telemetry, deterministic scoring, and report pipelines; one successful UI run does not validate scoring/report correctness.
 - `pytest` + FastAPI `TestClient` are used for backend tests, and `pytest monkeypatch` is used to force mock provider behavior and test env overrides.
-- Provider health endpoints exist because `mock`, `openai`, and `gemini` are interchangeable behind the gateway; ops needs a quick view of active provider, fallback rate, and latency quality.
+- Provider health endpoints exist because `mock` and `openai` are interchangeable behind the gateway; ops needs a quick view of active provider, fallback rate, and latency quality.
 - Metrics exist because averages hide long-tail slowness. The platform now emits Prometheus-compatible counters/histograms for request/error rates and latency distributions.
 - Structured JSON logs are privacy-preserving operational metadata only: route/method/status/timing/request_id/trace_id/provider/error metadata; no passwords, tokens, API keys, raw emails, prompts, scene bodies, report bodies, or full telemetry payloads.
 - W3C-style `traceparent` is parsed when present. Correlation headers are emitted as `X-Request-ID` and `traceparent`.
@@ -295,7 +320,7 @@ Future production direction:
   - NER-style PII redaction with regex/rule patterns
   - controlled topic tagging from comment text and tags
   - optional sentiment labeling for product-experience feedback
-- It does not call OpenAI/Gemini or any external LLM.
+- It does not call OpenAI or any external LLM.
 - It does not use heavy NLP model pipelines in this implementation.
 - It does not affect scoring, CDI, ADQ, PEN proxies, confidence bands, or benchmark comparisons.
 - Sentiment/topic outputs are UX/quality signals only and are not clinical, diagnostic, or hiring conclusions.
