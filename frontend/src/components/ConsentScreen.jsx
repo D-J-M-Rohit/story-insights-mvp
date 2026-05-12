@@ -82,6 +82,7 @@ export default function ConsentScreen() {
           <label>
             Max turns
             <select value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)}>
+              <option value="5">5</option>
               <option value="10">10</option>
               <option value="15">15</option>
               <option value="20">20</option>

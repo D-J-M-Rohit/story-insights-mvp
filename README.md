@@ -454,3 +454,29 @@ Security notes:
 
 Future migration note:
 - pgvector, Weaviate, Pinecone, Redis queues, and Kubernetes remain future options and are not part of this implementation.
+
+## Generating Metric Simulation Graphs Locally
+
+Two local scripts produce PNG graphs into `backend/generated_graphs/` for demos and visual scoring checks. They do not change scoring formulas, API contracts, normal app behavior, or the database schema.
+
+```bash
+cd backend
+python -m app.scripts.generate_metric_simulation_graphs
+python -m app.scripts.generate_db_observed_graphs
+```
+
+What they do:
+- Controlled simulation graphs (`G1`-`G4`) are formula-based scoring checks rendered from deterministic inputs in `app/evaluation_graphs.py`.
+- DB-observed graphs (`DB1`-`DB4`) read existing completed sessions, `derived_features`, and `choices` (telemetry/traits) from the configured database. Each graph is skipped with a clear message when there isn't enough stored data.
+- Files are saved as PNGs in `backend/generated_graphs/`.
+- The script uses the matplotlib `Agg` backend, so it works headlessly.
+- No user emails, user/session/scene/choice ids appear in graph labels.
+
+Optional flags:
+
+```bash
+python -m app.scripts.generate_metric_simulation_graphs --output-dir backend/generated_graphs --format png --show false
+python -m app.scripts.generate_db_observed_graphs --output-dir backend/generated_graphs --format png --show false
+```
+
+These graphs are controlled scoring simulations and observed-data snapshots, not population norms or diagnostic thresholds.
