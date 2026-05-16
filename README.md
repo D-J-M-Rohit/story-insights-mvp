@@ -1,4 +1,4 @@
-# Story Insights MVP
+# Scenario-Based Psychometric Insights with GenAI Narration
 
 A production-style behavioral assessment platform that places users inside branching story scenarios and derives psychometric insights from their choices. The platform combines deterministic scoring, optional LLM-driven scene generation, privacy-preserving telemetry, and on-demand PDF report generation.
 
