@@ -105,92 +105,144 @@ Each scenario session runs 5–10 turns. After the final turn the backend scores
 story-insights-mvp/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                  # FastAPI app + middleware wiring
-│   │   ├── models.py                # SQLAlchemy ORM models
-│   │   ├── schemas.py               # Pydantic request/response schemas
-│   │   ├── config.py                # Settings (pydantic-settings)
-│   │   ├── database.py              # DB engine + session factory
+│   │   ├── __init__.py
+│   │   ├── analysis_nlp.py          # Lightweight NLP: PII redaction, tagging, sentiment
+│   │   ├── archive_service.py       # Archival to object storage
 │   │   ├── auth.py                  # JWT + cookie auth
-│   │   ├── store.py                 # Session/scene CRUD
-│   │   ├── scoring.py               # Deterministic scoring engine
-│   │   ├── report_interpreter.py    # Score → human-readable buckets
-│   │   ├── evidence_mapper.py       # Evidence cards per construct
+│   │   ├── benchmark_baselines.py   # Baseline data
+│   │   ├── benchmarks.py            # Benchmark comparison engine
+│   │   ├── circuit_breaker.py       # Provider circuit breaker
 │   │   ├── confidence.py            # Confidence band estimation
-│   │   ├── llm_gateway.py           # Mock + OpenAI provider abstraction
-│   │   ├── prompt_policy.py         # Policy engine (construct/difficulty/knobs)
-│   │   ├── prompts.py               # Prompt builders
+│   │   ├── config.py                # Settings (pydantic-settings)
 │   │   ├── context_builder.py       # RAG context assembly
-│   │   ├── retrieval.py             # Fragment retrieval router
-│   │   ├── retrieval_store.py       # PostgreSQL fragment + embedding store
+│   │   ├── context_trace.py         # Context builder audit trace
+│   │   ├── database.py              # DB engine + session factory
 │   │   ├── embeddings.py            # Sentence-transformer wrapper
+│   │   ├── evaluation_graphs.py     # Formula-based scoring graph data
+│   │   ├── evidence_mapper.py       # Evidence cards per construct
+│   │   ├── feedback.py              # Feedback service
+│   │   ├── generation_trace.py      # Per-scene generation audit trace
+│   │   ├── llm_gateway.py           # Mock + OpenAI provider abstraction
+│   │   ├── logging_config.py        # Structured JSON logging
+│   │   ├── main.py                  # FastAPI app + middleware wiring
+│   │   ├── metrics.py               # Prometheus counters/histograms
+│   │   ├── models.py                # SQLAlchemy ORM models
+│   │   ├── object_store.py          # Object storage abstraction (fs/S3/MinIO)
 │   │   ├── pdf_report.py            # PDF orchestration (Playwright/ReportLab)
 │   │   ├── pdf_template.py          # ReportLab fallback builder
-│   │   ├── telemetry.py             # Telemetry ingestion + normalization
-│   │   ├── feedback.py              # Feedback service
-│   │   ├── analysis_nlp.py          # Lightweight NLP: PII redaction, tagging, sentiment
-│   │   ├── metrics.py               # Prometheus counters/histograms
-│   │   ├── rate_limit.py            # Token-bucket rate limiter
-│   │   ├── circuit_breaker.py       # Provider circuit breaker
-│   │   ├── provider_health.py       # Provider health window tracking
-│   │   ├── generation_trace.py      # Per-scene generation audit trace
 │   │   ├── policy_trace.py          # Policy input/output audit trace
-│   │   ├── context_trace.py         # Context builder audit trace
-│   │   ├── benchmarks.py            # Benchmark comparison engine
-│   │   ├── benchmark_baselines.py   # Baseline data
-│   │   ├── archive_service.py       # Archival to object storage
-│   │   ├── object_store.py          # Object storage abstraction (fs/S3/MinIO)
-│   │   ├── retention.py             # Data retention enforcement
 │   │   ├── privacy_scrub.py         # Log/trace sanitization patterns
-│   │   ├── logging_config.py        # Structured JSON logging
-│   │   ├── security_headers.py      # HTTP security headers middleware
-│   │   ├── scene_validation.py      # Scene output validation
-│   │   ├── trace_utils.py           # W3C traceparent parsing
+│   │   ├── prompt_policy.py         # Policy engine (construct/difficulty/knobs)
+│   │   ├── prompts.py               # Prompt builders
+│   │   ├── provider_health.py       # Provider health window tracking
+│   │   ├── rate_limit.py            # Token-bucket rate limiter
+│   │   ├── report_interpreter.py    # Score → human-readable buckets
 │   │   ├── request_context.py       # Request-scoped context vars
-│   │   ├── evaluation_graphs.py     # Formula-based scoring graph data
+│   │   ├── retention.py             # Data retention enforcement
+│   │   ├── retrieval.py             # Fragment retrieval router
+│   │   ├── retrieval_store.py       # PostgreSQL fragment + embedding store
 │   │   ├── scenario_packs.py        # Scenario pack loader
+│   │   ├── scene_validation.py      # Scene output validation
+│   │   ├── schemas.py               # Pydantic request/response schemas
+│   │   ├── scoring.py               # Deterministic scoring engine
+│   │   ├── security_headers.py      # HTTP security headers middleware
+│   │   ├── store.py                 # Session/scene CRUD
+│   │   ├── telemetry.py             # Telemetry ingestion + normalization
+│   │   ├── trace_utils.py           # W3C traceparent parsing
 │   │   ├── scenario_packs_data/     # JSON pack definitions
-│   │   │   ├── workplace_core_v1.json
+│   │   │   ├── emergency_core_v1.json
 │   │   │   ├── school_core_v1.json
-│   │   │   └── emergency_core_v1.json
+│   │   │   └── workplace_core_v1.json
 │   │   ├── templates/
 │   │   │   └── report_print.html    # Jinja2 template for Playwright PDF
 │   │   └── scripts/
-│   │       ├── seed_embeddings.py
-│   │       ├── rebuild_faiss.py
-│   │       ├── bench_scene_generation.py
+│   │       ├── __init__.py
 │   │       ├── bench_embeddings_faiss.py
 │   │       ├── bench_retrieval_generation.py
+│   │       ├── bench_scene_generation.py
+│   │       ├── generate_db_observed_graphs.py
 │   │       ├── generate_metric_simulation_graphs.py
-│   │       └── generate_db_observed_graphs.py
-│   ├── tests/                       # pytest test suite (35+ test files)
+│   │       ├── rebuild_faiss.py
+│   │       └── seed_embeddings.py
+│   ├── tests/
+│   │   ├── conftest.py
+│   │   ├── test_analysis_nlp.py
+│   │   ├── test_auth.py
+│   │   ├── test_auth_cookie_response.py
+│   │   ├── test_benchmark_baselines.py
+│   │   ├── test_benchmarks.py
+│   │   ├── test_circuit_breaker.py
+│   │   ├── test_confidence.py
+│   │   ├── test_context_builder.py
+│   │   ├── test_cookie_auth.py
+│   │   ├── test_derived_features.py
+│   │   ├── test_evaluation_graphs.py
+│   │   ├── test_evidence_mapper.py
+│   │   ├── test_feedback.py
+│   │   ├── test_feedback_idempotency.py
+│   │   ├── test_generation_trace.py
+│   │   ├── test_health.py
+│   │   ├── test_metrics.py
+│   │   ├── test_object_store.py
+│   │   ├── test_pdf_report.py
+│   │   ├── test_policy_context_generation_flow.py
+│   │   ├── test_privacy_logs.py
+│   │   ├── test_privacy_scrub.py
+│   │   ├── test_prompt_policy.py
+│   │   ├── test_provider_circuit_status.py
+│   │   ├── test_provider_health.py
+│   │   ├── test_provider_smoke_optional.py
+│   │   ├── test_rate_limit.py
+│   │   ├── test_reports.py
+│   │   ├── test_retrieval.py
+│   │   ├── test_retrieval_fallback_diagnostics.py
+│   │   ├── test_retrieval_store.py
+│   │   ├── test_scenario_packs.py
+│   │   ├── test_scene_validation.py
+│   │   ├── test_scoring.py
+│   │   ├── test_security_headers.py
+│   │   ├── test_session_duration.py
+│   │   ├── test_session_resume.py
+│   │   ├── test_sessions.py
+│   │   ├── test_telemetry.py
+│   │   └── test_trace_utils.py
 │   ├── data/
-│   │   ├── faiss/                   # FAISS index files (built locally)
-│   │   └── archive/                 # Local object archive root
-│   ├── requirements.txt
-│   ├── pytest.ini
+│   │   ├── archive/                 # Local object archive root
+│   │   └── faiss/
+│   │       ├── build/               # FAISS index build workspace
+│   │       └── current/             # Active FAISS index
+│   ├── generated_graphs/            # PNG output from graph scripts
+│   ├── .env                         # Local secrets (gitignored)
 │   ├── .env.example                 # Copy to .env and edit
-│   └── .env                         # Local secrets (gitignored)
+│   ├── pytest.ini
+│   ├── requirements.txt
+│   └── story_insights.db            # SQLite fallback DB (local dev only)
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx                  # Router setup
-│   │   ├── api.js                   # Axios/fetch API client
+│   │   ├── api.js                   # Fetch API client
+│   │   ├── main.jsx                 # React entry point
+│   │   ├── styles.css               # Global styles
 │   │   └── components/
-│   │       ├── AuthScreen.jsx
-│   │       ├── Dashboard.jsx
-│   │       ├── ConsentScreen.jsx
+│   │       ├── AppHeader.jsx
 │   │       ├── AssessmentFlow.jsx
 │   │       ├── AssessmentSessionRoute.jsx
-│   │       ├── SceneRenderer.jsx
-│   │       ├── SceneLoading.jsx
-│   │       ├── TimerBar.jsx
-│   │       ├── ReportViewer.jsx
+│   │       ├── AuthScreen.jsx
+│   │       ├── BrandLogo.jsx
+│   │       ├── ConsentScreen.jsx
+│   │       ├── Dashboard.jsx
 │   │       ├── FeedbackCard.jsx
 │   │       ├── MicroFeedbackPrompt.jsx
-│   │       ├── AppHeader.jsx
-│   │       └── BrandLogo.jsx
+│   │       ├── ReportViewer.jsx
+│   │       ├── SceneLoading.jsx
+│   │       ├── SceneRenderer.jsx
+│   │       └── TimerBar.jsx
+│   ├── dist/                        # Production build output
 │   ├── index.html
 │   ├── package.json
-│   └── vite.config.js (generated)
+│   ├── package-lock.json
+│   └── vite.config.js
+├── .gitignore
 ├── docker-compose.yml               # Postgres 16 service
 └── README.md
 ```
